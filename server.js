@@ -916,6 +916,10 @@ app.post('/api/payhero/callback', async (req, res) => {
   }
 });
 
+app.get('/docs', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'docs.html'));
+});
+
 // ============================================================
 // SPA FALLBACK
 // ============================================================
