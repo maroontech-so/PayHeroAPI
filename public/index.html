@@ -410,6 +410,8 @@
       width: 100%;
       box-shadow: 0 20px 25px rgba(0,0,0,0.15);
       border: 1px solid var(--border);
+      max-height: 90vh;
+      overflow-y: auto;
     }
     .modal h2 { font-size: 16px; margin-bottom: 12px; }
 
@@ -633,6 +635,7 @@ function toggleTheme() {
   localStorage.setItem('ph_theme', next);
   updateThemeIcon(next);
   if (currentPage === 'analytics') renderAnalytics();
+  if (currentPage === 'dashboard') renderDashboard();
 }
 function updateThemeIcon(theme) {
   const icon = document.getElementById('themeIcon');
@@ -714,7 +717,6 @@ function navigate(page) {
     document.getElementById('overlay').classList.remove('active');
   }
 
-  // destroy charts
   Object.values(charts).forEach(c => c.destroy());
   charts = {};
 
@@ -955,28 +957,35 @@ async function renderKeys() {
 
   try {
     const keys = await api('/api/admin/keys');
+
+    // -------- EMPTY STATE --------
+    if (keys.length === 0) {
+      c.innerHTML = `
+        <div class="card" style="text-align:center; padding:48px 24px;">
+          <div style="width:56px;height:56px;border-radius:14px;background:var(--primary);display:grid;place-items:center;margin:0 auto 16px;color:white;">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M15 7a2 2 0 0 1 2 2m4 0a6 6 0 0 1-7.743 5.743L11 17H9v2H7v2H4a1 1 0 0 1-1-1v-2.586a1 1 0 0 1 .293-.707l5.964-5.964A6 6 0 1 1 21 9z"/>
+            </svg>
+          </div>
+          <h2 style="font-size:18px;margin-bottom:8px;">No API keys yet</h2>
+          <p class="helper" style="max-width:420px;margin:0 auto 24px;">
+            Create your first API key to start accepting payments from your apps.
+            Each key is bound to a specific PayHero channel.
+          </p>
+          <button onclick="openCreateKeyModal()">Create your first API key</button>
+        </div>
+      `;
+      return;
+    }
+
+    // -------- LIST WITH KEYS --------
     c.innerHTML = `
       <div class="card">
-        <div class="card-title">Generate New API Key</div>
-        <div class="form-group">
-          <label>Application Name</label>
-          <input id="newKeyName" placeholder="e.g. Shop App" />
+        <div class="card-title">
+          <span>API Keys <span style="color:var(--text-muted);font-weight:400;font-size:12px;">${keys.length} total</span></span>
+          <button class="small" onclick="openCreateKeyModal()">+ New Key</button>
         </div>
-        <div class="form-group">
-          <label>PayHero Channel ID</label>
-          <input id="newKeyChannel" placeholder="e.g. 1234" />
-        </div>
-        <div class="form-group">
-          <label>App Identifier (optional)</label>
-          <input id="newKeyAppId" placeholder="defaults to application name" />
-        </div>
-        <button onclick="createKey()">Generate Key</button>
-      </div>
-
-      <div class="card">
-        <div class="card-title">API Keys <span style="color:var(--text-muted);font-weight:400;font-size:12px;">${keys.length} total</span></div>
         <div class="table-wrap">
-          ${keys.length === 0 ? '<div class="empty-state">No keys yet</div>' : `
           <table>
             <thead><tr>
               <th>Name</th><th>Preview</th><th>Channel</th>
@@ -1003,7 +1012,7 @@ async function renderKeys() {
                 </tr>
               `).join('')}
             </tbody>
-          </table>`}
+          </table>
         </div>
       </div>
 
@@ -1020,6 +1029,38 @@ async function renderKeys() {
   } catch (e) {
     c.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`;
   }
+}
+
+function openCreateKeyModal() {
+  openModal(`
+    <h2>Create New API Key</h2>
+    <p class="helper" style="margin-bottom:16px;">Each key is bound to a PayHero channel and cannot be shown again after creation.</p>
+    <div class="form-group">
+      <label>Application Name</label>
+      <input id="newKeyName" placeholder="e.g. Shop App" />
+    </div>
+    <div class="form-group">
+      <label>PayHero Channel ID</label>
+      <input id="newKeyChannel" placeholder="e.g. 1234" />
+    </div>
+    <div class="form-group">
+      <label>App Identifier (optional)</label>
+      <input id="newKeyAppId" placeholder="defaults to application name" />
+    </div>
+    <div class="btn-group" style="margin-top:8px;">
+      <button class="ghost" onclick="closeModal()">Cancel</button>
+      <button onclick="createKey()" style="flex:1;">Generate Key</button>
+    </div>
+  `);
+
+  setTimeout(() => document.getElementById('newKeyName')?.focus(), 50);
+
+  ['newKeyName','newKeyChannel','newKeyAppId'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') createKey();
+    });
+  });
 }
 
 async function createKey() {
@@ -1081,7 +1122,7 @@ async function verifyKey() {
       body: JSON.stringify({ api_key: k }),
     });
     out.innerHTML = r.valid
-      ? `<div class="badge badge-success">Valid</span> &nbsp; <strong>${esc(r.name)}</strong> · Channel ${esc(r.channel_id)}</div>`
+      ? `<div class="badge badge-success">Valid</div> &nbsp; <strong>${esc(r.name)}</strong> · Channel ${esc(r.channel_id)}`
       : `<div class="badge badge-failed">Invalid</div> &nbsp; ${esc(r.reason || 'Not active')}`;
   } catch (e) {
     out.innerHTML = `<span class="badge badge-failed">Error</span> ${esc(e.message)}`;
@@ -1251,7 +1292,7 @@ function drawBarChart(rows) {
 function drawAppsChart(rows) {
   const ctx = document.getElementById('chartApps');
   if (!ctx) return;
-  const { text } = chartColors();
+  const { text, grid } = chartColors();
   charts.apps = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -1336,7 +1377,6 @@ function printLine(html) {
   const d = document.createElement('div');
   d.className = 'terminal-line';
   d.innerHTML = html;
-  // insert before input line
   const inputLine = t.querySelector('.terminal-input-line');
   if (inputLine) t.insertBefore(d, inputLine);
   else t.appendChild(d);
@@ -1519,6 +1559,8 @@ function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('ph_theme', theme);
   updateThemeIcon(theme);
+  if (currentPage === 'dashboard') renderDashboard();
+  if (currentPage === 'analytics') renderAnalytics();
 }
 
 // ============================================================
