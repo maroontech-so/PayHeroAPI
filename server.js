@@ -717,23 +717,35 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
     const { phone_number, amount, external_reference, callback_url } = req.body;
     const channelId = req.apiKeyRecord.channel_id;
 
-    // Validate inputs
+    // ===== VALIDATION =====
     if (!phone_number || !amount || !external_reference) {
       logRequest(req.apiKeyRecord, req, 400);
-      return res.status(400).json({ error: 'phone_number, amount, and external_reference are required' });
+      return res.status(400).json({ 
+        error: 'phone_number, amount, and external_reference are required' 
+      });
     }
 
-    if (!/^254[17]\d{8}$/.test(phone_number)) {
+    // Normalize phone: accept 0707..., 254707..., +254707...
+    let phone = String(phone_number).replace(/\s+/g, '').replace(/-/g, '');
+    if (phone.startsWith('+')) phone = phone.slice(1);
+    if (phone.startsWith('0')) phone = '254' + phone.slice(1);
+    if (phone.startsWith('7') || phone.startsWith('1')) phone = '254' + phone;
+
+    if (!/^254[17]\d{8}$/.test(phone)) {
       logRequest(req.apiKeyRecord, req, 400);
-      return res.status(400).json({ error: 'Invalid phone number format. Use 254XXXXXXXXX' });
+      return res.status(400).json({ 
+        error: 'Invalid phone number. Use format 254708765597 or 0708765597' 
+      });
     }
 
     if (typeof amount !== 'number' || amount <= 0 || amount > 500000) {
       logRequest(req.apiKeyRecord, req, 400);
-      return res.status(400).json({ error: 'Amount must be between 1 and 500,000 KES' });
+      return res.status(400).json({ 
+        error: 'Amount must be between 1 and 500,000 KES' 
+      });
     }
 
-    // Idempotency: check if reference already exists
+    // ===== IDEMPOTENCY =====
     const existing = local.prepare(
       'SELECT * FROM transactions WHERE external_reference = ?'
     ).get(external_reference);
@@ -749,119 +761,112 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       });
     }
 
-    // Insert pending transaction
+    // ===== INSERT PENDING =====
     local.prepare(
-      `INSERT INTO transactions (external_reference, app_identifier, channel_id, phone_number, amount, status)
+      `INSERT INTO transactions 
+       (external_reference, app_identifier, channel_id, phone_number, amount, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`
-    ).run(external_reference, req.apiKeyRecord.app_identifier, channelId, phone_number, amount);
+    ).run(external_reference, req.apiKeyRecord.app_identifier, channelId, phone, amount);
 
     syncToTurso(
-      `INSERT OR IGNORE INTO transactions (external_reference, app_identifier, channel_id, phone_number, amount, status)
+      `INSERT OR IGNORE INTO transactions 
+       (external_reference, app_identifier, channel_id, phone_number, amount, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`,
-      [external_reference, req.apiKeyRecord.app_identifier, channelId, phone_number, amount]
+      [external_reference, req.apiKeyRecord.app_identifier, channelId, phone, amount]
     );
 
-    // Call PayHero API — with provider field
+    // ===== CALL PAYHERO (CORRECT ENDPOINT + PAYLOAD) =====
     const payheroPayload = {
-      amount,
-      phone_number,
-      provider: 'm-pesa',
+      amount: Number(amount),
+      phone_number: phone,
       channel_id: channelId,
-      external_reference,
+      provider: 'm-pesa',              // ← CRITICAL: REQUIRED
+      external_reference: external_reference,
       callback_url: callback_url || `${req.protocol}://${req.get('host')}/api/payhero/callback`,
     };
 
-    const response = await fetch('https://backend.payhero.co.ke/api/v2/payments/initiate-stk-push', {
-      method: 'POST',
-      headers: {
-        Authorization: getPayHeroAuthHeader(),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payheroPayload),
-    });
+    const response = await fetch(
+      'https://backend.payhero.co.ke/api/v2/payments/initiate-stk-push',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: getPayHeroAuthHeader(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payheroPayload),
+      }
+    );
 
     const data = await response.json();
 
+    // ===== HANDLE PAYHERO ERROR =====
     if (!response.ok) {
+      // Mark transaction as failed so it doesn't stay pending forever
+      local.prepare(
+        `UPDATE transactions 
+         SET status = 'failed', 
+             callback_payload = ?,
+             updated_at = datetime('now')
+         WHERE external_reference = ?`
+      ).run(JSON.stringify(data), external_reference);
+
+      syncToTurso(
+        `UPDATE transactions 
+         SET status = 'failed', 
+             callback_payload = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE external_reference = ?`,
+        [JSON.stringify(data), external_reference]
+      );
+
       logRequest(req.apiKeyRecord, req, response.status);
+
+      // Return a clear error to the client
       return res.status(response.status).json({
         error: 'PayHero API error',
+        message: data.error_message || data.message || 'STK Push failed',
         details: data,
       });
     }
 
-    // Store PayHero reference if returned
-    const payheroRef = data.reference || data.response?.reference || data.response?.Transaction_Reference;
+    // ===== SUCCESS: Store PayHero reference =====
+    const payheroRef = 
+      data.reference || 
+      data.response?.reference || 
+      data.response?.Transaction_Reference ||
+      data.checkout_request_id ||
+      '';
+
     if (payheroRef) {
       local.prepare(
-        "UPDATE transactions SET payhero_reference = ?, updated_at = datetime('now') WHERE external_reference = ?"
+        `UPDATE transactions 
+         SET payhero_reference = ?, updated_at = datetime('now')
+         WHERE external_reference = ?`
       ).run(payheroRef, external_reference);
+
       syncToTurso(
-        "UPDATE transactions SET payhero_reference = ?, updated_at = datetime('now') WHERE external_reference = ?",
+        `UPDATE transactions 
+         SET payhero_reference = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE external_reference = ?`,
         [payheroRef, external_reference]
       );
     }
 
     logRequest(req.apiKeyRecord, req, 200);
-    res.json({ success: true, external_reference, payhero_response: data });
+
+    res.json({
+      success: true,
+      external_reference,
+      payhero_response: data,
+    });
+
   } catch (error) {
     console.error('STK Push error:', error);
     logRequest(req.apiKeyRecord, req, 500);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
-  try {
-    const { reference } = req.params;
-    const channelId = req.apiKeyRecord.channel_id;
-
-    // Check local DB first
-    const t = local.prepare(
-      'SELECT * FROM transactions WHERE external_reference = ? OR payhero_reference = ? OR mpesa_receipt = ?'
-    ).get(reference, reference, reference);
-
-    if (t && t.status !== 'pending' && t.verified_with_payhero) {
-      logRequest(req.apiKeyRecord, req, 200);
-      return res.json({ source: 'local', transaction: t });
-    }
-
-    // Query PayHero directly for verification
-    const response = await fetch(
-      `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(reference)}&channel_id=${channelId}`,
-      { headers: { Authorization: getPayHeroAuthHeader() } }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      logRequest(req.apiKeyRecord, req, response.status);
-      return res.status(response.status).json({
-        error: 'PayHero API error',
-        details: data,
-      });
-    }
-
-    // Update local if we have a matching transaction
-    if (t) {
-      const normalized = normalizeStatus(data.status || data.Status || data.response?.Status);
-      if (normalized !== 'unknown') {
-        local.prepare(
-          `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = datetime('now') WHERE id = ?`
-        ).run(normalized, t.id);
-        syncToTurso(
-          `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = CURRENT_TIMESTAMP WHERE external_reference = ?`,
-          [normalized, t.external_reference]
-        );
-      }
-    }
-
-    logRequest(req.apiKeyRecord, req, 200);
-    res.json({ source: 'payhero', transaction: data });
-  } catch (error) {
-    console.error('Status query error:', error);
-    logRequest(req.apiKeyRecord, req, 500);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 });
 
