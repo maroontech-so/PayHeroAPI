@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PayHero Central API - Admin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { margin-bottom: 20px; color: #333; }
+    .card { background: white; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .card h2 { margin-bottom: 16px; color: #555; font-size: 1.1rem; }
+    input, button { padding: 10px 14px; font-size: 14px; border-radius: 6px; border: 1px solid #ddd; }
+    input { width: 100%; margin-bottom: 12px; }
+    button { background: #2563eb; color: white; border: none; cursor: pointer; font-weight: 500; }
+    button:hover { background: #1d4ed8; }
+    button.danger { background: #dc2626; }
+    button.danger:hover { background: #b91c1c; }
+    button.secondary { background: #6b7280; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+    th { background: #f9fafb; font-weight: 600; }
+    .key-display { background: #fef3c7; border: 1px solid #f59e0b; padding: 12px; border-radius: 6px; margin: 12px 0; word-break: break-all; font-family: monospace; font-size: 13px; }
+    .status-active { color: #16a34a; font-weight: 500; }
+    .status-inactive { color: #dc2626; font-weight: 500; }
+    .hidden { display: none; }
+    .flex { display: flex; gap: 10px; }
+    .flex input { flex: 1; }
+    .toast { position: fixed; bottom: 20px; right: 20px; background: #333; color: white; padding: 12px 20px; border-radius: 6px; font-size: 14px; opacity: 0; transition: opacity 0.3s; }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>PayHero Central API Admin</h1>
+
+    <!-- Login -->
+    <div id="loginSection" class="card">
+      <h2>Admin Login</h2>
+      <input type="password" id="adminPassword" placeholder="Admin Password">
+      <button onclick="login()">Login</button>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="hidden">
+      <div class="card">
+        <h2>Generate New API Key</h2>
+        <input type="text" id="keyName" placeholder="App Name (e.g., Shop App)">
+        <input type="text" id="channelId" placeholder="PayHero Channel ID">
+        <button onclick="createKey()">Generate Key</button>
+        <div id="newKeyDisplay"></div>
+      </div>
+
+      <div class="card">
+        <h2>Active API Keys</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>App Identifier</th>
+              <th>Channel ID</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="keysTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Usage Instructions</h2>
+        <p style="margin-bottom: 12px; color: #666;">
+          Use the generated API Key in your applications via the <code>x-api-key</code> header.
+        </p>
+        <h3 style="font-size: 0.95rem; margin: 16px 0 8px;">Initiate STK Push:</h3>
+        <pre style="background: #f3f4f6; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px;">POST /api/pay/stk-push
+Headers: { "x-api-key": "YOUR_KEY", "Content-Type": "application/json" }
+Body: {
+  "phone_number": "254712345678",
+  "amount": 100,
+  "external_reference": "order_001",
+  "callback_url": "https://your-app.com/callback" (optional)
+}</pre>
+        <h3 style="font-size: 0.95rem; margin: 16px 0 8px;">Query Transaction:</h3>
+        <pre style="background: #f3f4f6; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px;">GET /api/pay/status/order_001
+Headers: { "x-api-key": "YOUR_KEY" }</pre>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    let adminToken = '';
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    async function login() {
+      const password = document.getElementById('adminPassword').value;
+      if (!password) return showToast('Enter password');
+      
+      try {
+        const res = await fetch('/api/admin/keys', {
+          headers: { 'x-admin-token': password }
+        });
+        if (res.ok) {
+          adminToken = password;
+          document.getElementById('loginSection').classList.add('hidden');
+          document.getElementById('dashboard').classList.remove('hidden');
+          loadKeys();
+        } else {
+          showToast('Invalid password');
+        }
+      } catch (e) {
+        showToast('Login failed');
+      }
+    }
+
+    async function loadKeys() {
+      const res = await fetch('/api/admin/keys', {
+        headers: { 'x-admin-token': adminToken }
+      });
+      const keys = await res.json();
+      
+      const tbody = document.getElementById('keysTableBody');
+      tbody.innerHTML = keys.map(k => `
+        <tr>
+          <td>${escapeHtml(k.name)}</td>
+          <td>${escapeHtml(k.app_identifier || '-')}</td>
+          <td>${escapeHtml(k.channel_id)}</td>
+          <td class="${k.is_active ? 'status-active' : 'status-inactive'}">
+            ${k.is_active ? 'Active' : 'Revoked'}
+          </td>
+          <td>${new Date(k.created_at).toLocaleDateString()}</td>
+          <td>
+            ${k.is_active ? `<button class="danger" onclick="revokeKey(${k.id})">Revoke</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    async function createKey() {
+      const name = document.getElementById('keyName').value.trim();
+      const channelId = document.getElementById('channelId').value.trim();
+      
+      if (!name || !channelId) return showToast('Name and Channel ID required');
+
+      const res = await fetch('/api/admin/keys', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': adminToken
+        },
+        body: JSON.stringify({ name, channel_id: channelId })
+      });
+
+      const data = await res.json();
+      
+      if (res.ok) {
+        document.getElementById('newKeyDisplay').innerHTML = `
+          <div class="key-display">
+            <strong>Your API Key (copy now, never shown again):</strong><br>
+            ${data.api_key}
+          </div>
+        `;
+        document.getElementById('keyName').value = '';
+        document.getElementById('channelId').value = '';
+        loadKeys();
+        showToast('API Key created');
+      } else {
+        showToast(data.error || 'Failed to create key');
+      }
+    }
+
+    async function revokeKey(id) {
+      if (!confirm('Revoke this key? Apps using it will stop working.')) return;
+      
+      await fetch(`/api/admin/keys/${id}/revoke`, {
+        method: 'PATCH',
+        headers: { 'x-admin-token': adminToken }
+      });
+      
+      loadKeys();
+      showToast('Key revoked');
+    }
+  </script>
+</body>
+</html>
