@@ -1,0 +1,1554 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PayHero Central API — Documentation</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='68' font-size='60' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>D</text></svg>" />
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-alt: #f9fafb;
+      --surface: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --text-muted: #6b7280;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-soft: #eef2ff;
+      --code-bg: #1e293b;
+      --code-text: #e2e8f0;
+      --code-inline-bg: #f3f4f6;
+      --code-inline-text: #db2777;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --sidebar-w: 280px;
+      --header-h: 60px;
+      --radius: 10px;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    [data-theme="dark"] {
+      --bg: #0b1220;
+      --bg-alt: #0f172a;
+      --surface: #111c33;
+      --border: #1e293b;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --primary: #818cf8;
+      --primary-hover: #a5b4fc;
+      --primary-soft: #1e1b4b;
+      --code-inline-bg: #1e293b;
+      --code-inline-text: #f472b6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-h) + 20px); }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ============ HEADER ============ */
+    .header {
+      position: sticky;
+      top: 0;
+      height: var(--header-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .brand:hover { text-decoration: none; }
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      background: var(--primary);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: white;
+      font-weight: 800;
+      font-size: 14px;
+    }
+    .header-nav {
+      display: flex;
+      gap: 4px;
+      margin-left: auto;
+      align-items: center;
+    }
+    .header-nav a {
+      color: var(--text-muted);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 500;
+    }
+    .header-nav a:hover {
+      background: var(--bg-alt);
+      color: var(--text);
+      text-decoration: none;
+    }
+    .theme-toggle {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border-radius: 8px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+    }
+    .theme-toggle:hover { background: var(--bg-alt); }
+    .menu-btn {
+      display: none;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border-radius: 8px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      place-items: center;
+      cursor: pointer;
+    }
+
+    /* ============ LAYOUT ============ */
+    .layout {
+      display: flex;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .sidebar {
+      width: var(--sidebar-w);
+      border-right: 1px solid var(--border);
+      padding: 24px 16px;
+      position: sticky;
+      top: var(--header-h);
+      height: calc(100vh - var(--header-h));
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    .sidebar-section {
+      margin-bottom: 24px;
+    }
+    .sidebar-section h4 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      padding: 0 8px;
+    }
+    .sidebar-section a {
+      display: block;
+      padding: 6px 10px;
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 500;
+      text-decoration: none;
+    }
+    .sidebar-section a:hover {
+      background: var(--bg-alt);
+      color: var(--text);
+    }
+    .sidebar-section a.active {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
+    .content {
+      flex: 1;
+      min-width: 0;
+      padding: 40px 48px 80px;
+      max-width: 900px;
+    }
+
+    /* ============ TYPOGRAPHY ============ */
+    h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+    h2 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      margin: 48px 0 16px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      line-height: 1.3;
+    }
+    h2:first-of-type { border-top: none; padding-top: 0; margin-top: 40px; }
+    h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 32px 0 12px;
+      line-height: 1.3;
+    }
+    h4 {
+      font-size: 15px;
+      font-weight: 700;
+      margin: 24px 0 8px;
+    }
+    p { margin-bottom: 16px; }
+    ul, ol { margin: 0 0 16px 24px; }
+    li { margin-bottom: 6px; }
+    strong { font-weight: 700; }
+    em { font-style: italic; }
+
+    .lead {
+      font-size: 17px;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+    }
+
+    /* ============ CODE ============ */
+    code {
+      background: var(--code-inline-bg);
+      color: var(--code-inline-text);
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-size: 13px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 18px;
+      border-radius: var(--radius);
+      overflow-x: auto;
+      margin: 16px 0;
+      font-size: 13px;
+      line-height: 1.65;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      position: relative;
+      border: 1px solid #0f172a;
+    }
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      font-size: inherit;
+    }
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0f172a;
+      color: #94a3b8;
+      padding: 8px 14px;
+      border-radius: var(--radius) var(--radius) 0 0;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      border: 1px solid #0f172a;
+      border-bottom: none;
+      margin-top: 16px;
+    }
+    .code-header + pre {
+      margin-top: 0;
+      border-radius: 0 0 var(--radius) var(--radius);
+    }
+    .copy-btn {
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid #334155;
+      padding: 3px 10px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 500;
+    }
+    .copy-btn:hover { background: #1e293b; color: #e2e8f0; }
+    .copy-btn.copied {
+      background: #065f46;
+      color: #a7f3d0;
+      border-color: #065f46;
+    }
+
+    /* ============ CALLOUTS ============ */
+    .callout {
+      padding: 14px 18px;
+      border-radius: var(--radius);
+      border-left: 4px solid;
+      margin: 20px 0;
+      font-size: 14px;
+    }
+    .callout p:last-child { margin-bottom: 0; }
+    .callout.info {
+      background: #eff6ff;
+      border-color: #3b82f6;
+      color: #1e40af;
+    }
+    .callout.warn {
+      background: #fffbeb;
+      border-color: #f59e0b;
+      color: #92400e;
+    }
+    .callout.success {
+      background: #ecfdf5;
+      border-color: #10b981;
+      color: #065f46;
+    }
+    .callout.danger {
+      background: #fef2f2;
+      border-color: #ef4444;
+      color: #991b1b;
+    }
+    [data-theme="dark"] .callout.info { background: #172554; color: #bfdbfe; }
+    [data-theme="dark"] .callout.warn { background: #451a03; color: #fde68a; }
+    [data-theme="dark"] .callout.success { background: #022c22; color: #a7f3d0; }
+    [data-theme="dark"] .callout.danger { background: #450a0a; color: #fecaca; }
+    .callout strong { display: block; margin-bottom: 4px; }
+
+    /* ============ TABLES ============ */
+    .table-wrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--border); border-radius: var(--radius); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+    th, td {
+      text-align: left;
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: var(--bg-alt);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text-muted);
+    }
+    tr:last-child td { border-bottom: none; }
+
+    /* ============ BADGES ============ */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      font-family: ui-monospace, monospace;
+    }
+    .badge.get { background: #dbeafe; color: #1e40af; }
+    .badge.post { background: #dcfce7; color: #166534; }
+    .badge.patch { background: #fef3c7; color: #92400e; }
+    .badge.delete { background: #fee2e2; color: #991b1b; }
+    [data-theme="dark"] .badge.get { background: #1e3a8a; color: #bfdbfe; }
+    [data-theme="dark"] .badge.post { background: #14532d; color: #bbf7d0; }
+    [data-theme="dark"] .badge.patch { background: #78350f; color: #fde68a; }
+    [data-theme="dark"] .badge.delete { background: #7f1d1d; color: #fecaca; }
+
+    /* ============ ENDPOINT BLOCK ============ */
+    .endpoint {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin: 16px 0;
+      font-family: ui-monospace, monospace;
+      font-size: 13.5px;
+      flex-wrap: wrap;
+    }
+    .endpoint .path { font-weight: 600; }
+
+    /* ============ PROMPT BOX ============ */
+    .prompt-box {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      border-radius: 16px;
+      padding: 28px;
+      color: white;
+      margin: 32px 0;
+    }
+    [data-theme="dark"] .prompt-box {
+      background: linear-gradient(135deg, #312e81 0%, #4c1d95 100%);
+    }
+    .prompt-box h3 {
+      color: white;
+      margin-top: 0;
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    .prompt-box p {
+      opacity: 0.9;
+      margin-bottom: 16px;
+      font-size: 14.5px;
+    }
+    .prompt-box .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: white;
+      color: #4f46e5;
+      padding: 12px 20px;
+      border-radius: 10px;
+      border: none;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .prompt-box .btn:hover { background: #f3f4f6; }
+
+    /* ============ FOOTER ============ */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 48px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-top: 60px;
+    }
+
+    /* ============ RESPONSIVE ============ */
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 90;
+    }
+
+    @media (max-width: 960px) {
+      .header-nav { display: none; }
+      .menu-btn { display: grid; }
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: var(--header-h);
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        background: var(--surface);
+        z-index: 95;
+        width: 280px;
+      }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-overlay.active { display: block; }
+      .content { padding: 32px 20px 80px; }
+      h1 { font-size: 26px; }
+      h2 { font-size: 20px; }
+      h3 { font-size: 16px; }
+    }
+
+    /* Anchor link scroll highlight */
+    .content h2, .content h3 { position: relative; }
+    .content h2::before, .content h3::before {
+      content: '';
+      display: block;
+      height: calc(var(--header-h) + 16px);
+      margin-top: calc(-1 * (var(--header-h) + 16px));
+      visibility: hidden;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="#" class="brand">
+    <div class="brand-mark">P</div>
+    PayHero Central API
+  </a>
+  <nav class="header-nav">
+    <a href="/">Dashboard</a>
+    <a href="#quickstart">Quick Start</a>
+    <a href="#endpoints">API Reference</a>
+    <a href="#llm-prompt">LLM Prompt</a>
+  </nav>
+  <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="themeIcon">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>
+</header>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-section">
+      <h4>Getting Started</h4>
+      <a href="#overview" class="nav-link">Overview</a>
+      <a href="#architecture" class="nav-link">Architecture</a>
+      <a href="#quickstart" class="nav-link">Quick Start</a>
+      <a href="#auth" class="nav-link">Authentication</a>
+    </div>
+    <div class="sidebar-section">
+      <h4>Core Concepts</h4>
+      <a href="#flow" class="nav-link">Payment Flow</a>
+      <a href="#references" class="nav-link">References & IDs</a>
+      <a href="#statuses" class="nav-link">Transaction Statuses</a>
+      <a href="#errors" class="nav-link">Error Codes</a>
+    </div>
+    <div class="sidebar-section">
+      <h4>API Reference</h4>
+      <a href="#endpoints" class="nav-link">All Endpoints</a>
+      <a href="#ep-stk" class="nav-link">Initiate STK Push</a>
+      <a href="#ep-status" class="nav-link">Query Status</a>
+      <a href="#webhooks" class="nav-link">Webhooks</a>
+    </div>
+    <div class="sidebar-section">
+      <h4>Integration</h4>
+      <a href="#examples" class="nav-link">Code Examples</a>
+      <a href="#security" class="nav-link">Security Best Practices</a>
+      <a href="#testing" class="nav-link">Testing & Debugging</a>
+      <a href="#llm-prompt" class="nav-link">LLM Prompt</a>
+    </div>
+  </aside>
+
+  <!-- ============ CONTENT ============ -->
+  <main class="content">
+
+    <h1>PayHero Central API</h1>
+    <p class="lead">
+      A single, secure HTTP API for M-PESA STK Push payments via PayHero. Integrate once, use across every app, and manage all payments from one dashboard.
+    </p>
+
+    <!-- ============ OVERVIEW ============ -->
+    <h2 id="overview">Overview</h2>
+    <p>
+      PayHero Central API is a middleware server that sits between your applications and PayHero. Instead of embedding PayHero credentials in every app you build, you embed this single API's URL and an API key. This server handles:
+    </p>
+    <ul>
+      <li>Secure credential storage (PayHero username, password, and channels stay on the server)</li>
+      <li>Per-app API key generation and revocation</li>
+      <li>STK Push initiation to Safaricom M-PESA via PayHero</li>
+      <li>Real-time transaction status polling</li>
+      <li>Webhook receiving and forwarding to your apps</li>
+      <li>Complete audit logging of every request and callback</li>
+      <li>Unified analytics dashboard for all transactions</li>
+    </ul>
+
+    <div class="callout success">
+      <strong>One API to serve all your apps</strong>
+      Build 2 apps or 200 — they all point to the same endpoint with different keys. Add a new app by generating a key, no server changes needed.
+    </div>
+
+    <!-- ============ ARCHITECTURE ============ -->
+    <h2 id="architecture">Architecture</h2>
+    <p>Here's how a payment flows through the system:</p>
+    <pre><code>┌─────────────┐        ┌──────────────────────┐        ┌──────────┐
+│  Your App   │──(1)──▶│ PayHero Central API  │──(2)──▶│ PayHero  │
+│ (frontend)  │        │ payheroapi.onrender  │        │  v2 API  │
+└─────────────┘        └──────────────────────┘        └──────────┘
+      ▲                        │                             │
+      │                        │(3) STK prompt sent          │
+      │                        ▼                             ▼
+      │                  ┌──────────┐                  ┌──────────┐
+      │                  │ Customer │                  │ Safaricom│
+      │                  │  Phone   │◀─────────────────│  M-PESA  │
+      │                  └──────────┘   PIN prompt     └──────────┘
+      │                        │                             │
+      │                        │                             │
+      │                        │(4) Callback sent ───────────┘
+      │                        ▼
+      │                  ┌──────────────────────┐
+      │◀───(5) poll──────│ PayHero Central API  │
+      │                  │  (updates DB)        │
+      │                  └──────────────────────┘</code></pre>
+
+    <ol>
+      <li><strong>Your app calls our API</strong> with the customer's phone number and amount.</li>
+      <li><strong>Our server calls PayHero</strong> using its stored credentials and the channel assigned to your API key.</li>
+      <li><strong>PayHero pushes an STK prompt</strong> to the customer's phone via Safaricom M-PESA.</li>
+      <li><strong>PayHero sends us a callback</strong> when the customer enters (or fails to enter) their PIN.</li>
+      <li><strong>Your app polls our status endpoint</strong> (or receives a webhook) to know the result.</li>
+    </ol>
+
+    <!-- ============ QUICK START ============ -->
+    <h2 id="quickstart">Quick Start</h2>
+    <p>Five minutes from zero to a working STK push:</p>
+
+    <h3>Step 1 — Get an API key</h3>
+    <p>
+      Log into the <a href="/">admin dashboard</a> with your admin password. Navigate to <strong>API Keys</strong>, click <strong>+ New Key</strong>, and fill in:
+    </p>
+    <ul>
+      <li><strong>Application Name</strong> — e.g. "Shop App" (just for your reference)</li>
+      <li><strong>PayHero Channel ID</strong> — the numeric channel ID from your PayHero dashboard</li>
+      <li><strong>Webhook URL (optional)</strong> — the URL in your app that should receive payment callbacks</li>
+    </ul>
+    <p>
+      Copy the generated key immediately. It looks like <code>phk_...</code> and will <strong>not be shown again</strong>.
+    </p>
+
+    <div class="callout warn">
+      <strong>Store the key securely</strong>
+      Never commit it to git, never embed it in a client-side JavaScript file for public apps, and never email it. Treat it like a password.
+    </div>
+
+    <h3>Step 2 — Make your first request</h3>
+    <p>Send an STK push with curl:</p>
+
+    <div class="code-header">
+      <span>cURL</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>curl -X POST https://payheroapi.onrender.com/api/pay/stk-push \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: phk_YOUR_KEY_HERE" \
+  -d '{
+    "phone_number": "254708765597",
+    "amount": 100,
+    "external_reference": "order_001"
+  }'</code></pre>
+
+    <p>If everything is configured correctly, you'll get:</p>
+
+    <div class="code-header">
+      <span>Response — 200 OK</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>{
+  "success": true,
+  "external_reference": "order_001",
+  "payhero_response": {
+    "success": true,
+    "status": "QUEUED",
+    "reference": "459f-4830-826e-468950aa6264260747",
+    "CheckoutRequestID": "ws_CO_16102026162210086707865597",
+    "external_reference": "order_001"
+  }
+}</code></pre>
+
+    <p>An STK prompt will appear on the phone within ~10 seconds.</p>
+
+    <h3>Step 3 — Poll for status</h3>
+    <p>Poll the status endpoint until you see <code>success</code> or <code>failed</code>:</p>
+
+    <div class="code-header">
+      <span>cURL</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>curl -H "x-api-key: phk_YOUR_KEY_HERE" \
+  https://payheroapi.onrender.com/api/pay/status/order_001</code></pre>
+
+    <p>When the customer completes payment, you'll see:</p>
+
+    <div class="code-header">
+      <span>Response — 200 OK (success)</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>{
+  "source": "local",
+  "transaction": {
+    "external_reference": "order_001",
+    "status": "success",
+    "mpesa_receipt": "UJGD7B29B0",
+    "amount": 100,
+    "phone_number": "254708765597",
+    "verified_with_payhero": 1
+  }
+}</code></pre>
+
+    <!-- ============ AUTH ============ -->
+    <h2 id="auth">Authentication</h2>
+    <p>
+      Every API request must include an <code>x-api-key</code> header containing a valid key from your admin dashboard:
+    </p>
+
+    <div class="code-header">
+      <span>Header</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>x-api-key: phk_a1b2c3d4e5f6...</code></pre>
+
+    <p>
+      You can also pass the key as a query string parameter (<code>?api_key=...</code>) for testing, but the header is preferred.
+    </p>
+
+    <h3>Key properties</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Format</td><td><code>phk_</code> + 64 hex characters</td></tr>
+          <tr><td>Entropy</td><td>256 bits (cryptographically random)</td></tr>
+          <tr><td>Storage</td><td>SHA-256 hashed — plaintext never stored on our servers</td></tr>
+          <tr><td>Scope</td><td>Bound to one PayHero channel per key</td></tr>
+          <tr><td>Rate limit</td><td>100 requests/minute (configurable per key)</td></tr>
+          <tr><td>Rotation</td><td>Revoke anytime from the dashboard; create a new one</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout danger">
+      <strong>Never expose your key in public code</strong>
+      For web apps, always make API calls from your backend. For static sites, use a serverless function as a proxy. If a key is leaked, revoke it immediately from the dashboard.
+    </div>
+
+    <!-- ============ FLOW ============ -->
+    <h2 id="flow">Payment Flow</h2>
+    <p>The recommended client-side flow for a typical checkout:</p>
+
+    <ol>
+      <li>User enters phone number and confirms amount on your app.</li>
+      <li>Your app <code>POST</code>s to <code>/api/pay/stk-push</code> with the phone, amount, and a unique <code>external_reference</code>.</li>
+      <li>Our API forwards the request to PayHero, stores a <code>pending</code> transaction, and returns PayHero's reference IDs.</li>
+      <li>PayHero sends an STK prompt to the customer's phone.</li>
+      <li>Your app <strong>polls</strong> <code>GET /api/pay/status/:reference</code> every 2–3 seconds, up to 2 minutes.</li>
+      <li>When the customer enters their PIN, PayHero sends a callback to our server. Our server verifies the status with PayHero, updates the transaction, and — if your key has a webhook URL — forwards a signed POST to your app.</li>
+      <li>Your app's poll sees <code>success</code> (with M-PESA receipt) or <code>failed</code> (with reason) and shows the result to the user.</li>
+    </ol>
+
+    <div class="callout info">
+      <strong>Polling vs webhooks</strong>
+      Polling is simpler to implement and works everywhere. Webhooks are more efficient for high-volume apps. You can use both: webhooks for server-side order fulfillment, polling for the customer-facing UI.
+    </div>
+
+    <!-- ============ REFERENCES ============ -->
+    <h2 id="references">References &amp; IDs</h2>
+    <p>
+      A single payment has several identifiers. Understanding them prevents most integration bugs.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Identifier</th>
+            <th>Where it comes from</th>
+            <th>Best use</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>external_reference</code></td>
+            <td>You generate it (must be unique)</td>
+            <td>Idempotency; primary lookup</td>
+          </tr>
+          <tr>
+            <td><code>reference</code></td>
+            <td>PayHero response</td>
+            <td>Fallback lookup</td>
+          </tr>
+          <tr>
+            <td><code>CheckoutRequestID</code></td>
+            <td>PayHero response (e.g. <code>ws_CO_...</code>)</td>
+            <td>Fallback lookup</td>
+          </tr>
+          <tr>
+            <td><code>MerchantRequestID</code></td>
+            <td>PayHero callback</td>
+            <td>Fallback lookup in webhook handler</td>
+          </tr>
+          <tr>
+            <td><code>mpesa_receipt</code></td>
+            <td>After successful payment (e.g. <code>UJGD7B29B0</code>)</td>
+            <td>Customer-facing receipt</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout success">
+      <strong>You can poll with any of these</strong>
+      Our status endpoint matches <code>external_reference</code>, <code>reference</code>, <code>CheckoutRequestID</code>, and <code>mpesa_receipt</code> automatically. Use whichever you have.
+    </div>
+
+    <h3>Idempotency</h3>
+    <p>
+      The <code>external_reference</code> is unique across all your transactions. If you <code>POST</code> an STK push with a reference that already exists, our API returns the original transaction (with <code>idempotent: true</code>) instead of initiating a new charge.
+    </p>
+
+    <div class="code-header">
+      <span>Idempotent response</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>{
+  "success": true,
+  "external_reference": "order_001",
+  "idempotent": true,
+  "transaction": { ... existing record ... }
+}</code></pre>
+
+    <p>
+      This means your app can safely retry on network failures. Just use the same <code>external_reference</code>.
+    </p>
+
+    <!-- ============ STATUSES ============ -->
+    <h2 id="statuses">Transaction Statuses</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Meaning</th>
+            <th>What to do</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>pending</code></td>
+            <td>STK push sent, waiting for customer to enter PIN</td>
+            <td>Keep polling</td>
+          </tr>
+          <tr>
+            <td><code>success</code></td>
+            <td>Payment completed, M-PESA receipt issued</td>
+            <td>Fulfill the order</td>
+          </tr>
+          <tr>
+            <td><code>failed</code></td>
+            <td>Payment failed — customer cancelled, insufficient funds, timeout, etc.</td>
+            <td>Show reason, allow retry</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============ ERRORS ============ -->
+    <h2 id="errors">Error Codes</h2>
+    <p>Our API returns standard HTTP status codes with JSON error bodies.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>HTTP</th>
+            <th>Meaning</th>
+            <th>Common cause</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>400</td><td>Bad Request</td><td>Missing field, wrong phone format, invalid amount</td></tr>
+          <tr><td>401</td><td>Unauthorized</td><td>No <code>x-api-key</code> header</td></tr>
+          <tr><td>403</td><td>Forbidden</td><td>Key is invalid, revoked, or expired</td></tr>
+          <tr><td>404</td><td>Not Found</td><td>Transaction with that reference doesn't exist</td></tr>
+          <tr><td>429</td><td>Rate Limited</td><td>Exceeded 100 requests/minute</td></tr>
+          <tr><td>500</td><td>Server Error</td><td>Unexpected — check server logs</td></tr>
+          <tr><td>502</td><td>Bad Gateway</td><td>PayHero is unreachable</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>PayHero result codes</h3>
+    <p>When a payment fails, the callback contains a <code>ResultCode</code> from PayHero/Safaricom. The most common ones:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Meaning</th>
+            <th>User-facing message</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>0</td><td>Success</td><td>"Payment received"</td></tr>
+          <tr><td>1</td><td>Insufficient balance</td><td>"Your M-PESA balance is too low"</td></tr>
+          <tr><td>1032</td><td>User cancelled</td><td>"You cancelled the payment"</td></tr>
+          <tr><td>1037</td><td>Timeout — phone unreachable</td><td>"We couldn't reach your phone. Check signal and try again."</td></tr>
+          <tr><td>2001</td><td>Wrong PIN</td><td>"Incorrect PIN. Please try again."</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============ ENDPOINTS ============ -->
+    <h2 id="endpoints">API Reference</h2>
+    <p>All endpoints return JSON. The base URL is <code>https://payheroapi.onrender.com</code>.</p>
+
+    <!-- ============ STK PUSH ============ -->
+    <h3 id="ep-stk">Initiate STK Push</h3>
+    <div class="endpoint">
+      <span class="badge post">POST</span>
+      <span class="path">/api/pay/stk-push</span>
+    </div>
+
+    <p>Initiates an M-PESA STK push to the customer's phone.</p>
+
+    <h4>Headers</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Header</th><th>Required</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td><code>x-api-key</code></td><td>Yes</td><td>Your API key</td></tr>
+          <tr><td><code>Content-Type</code></td><td>Yes</td><td><code>application/json</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>Body</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>phone_number</code></td>
+            <td>string</td>
+            <td>Yes</td>
+            <td>Customer phone in any Kenyan format: <code>0708765597</code>, <code>254708765597</code>, or <code>+254708765597</code>. Normalized to <code>254XXXXXXXXX</code>.</td>
+          </tr>
+          <tr>
+            <td><code>amount</code></td>
+            <td>number</td>
+            <td>Yes</td>
+            <td>Amount in KES. Between 1 and 500,000.</td>
+          </tr>
+          <tr>
+            <td><code>external_reference</code></td>
+            <td>string</td>
+            <td>Yes</td>
+            <td>Your unique ID for this payment. Max 100 chars. Must be unique per transaction.</td>
+          </tr>
+          <tr>
+            <td><code>callback_url</code></td>
+            <td>string</td>
+            <td>No</td>
+            <td>Override the default callback URL. Must be HTTPS.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>Example request</h4>
+    <div class="code-header">
+      <span>JavaScript (fetch)</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>const res = await fetch('https://payheroapi.onrender.com/api/pay/stk-push', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': 'phk_YOUR_KEY_HERE',
+  },
+  body: JSON.stringify({
+    phone_number: '254708765597',
+    amount: 100,
+    external_reference: 'order_' + Date.now(),
+  }),
+});
+
+const data = await res.json();
+console.log(data);</code></pre>
+
+    <h4>Example response (200 OK)</h4>
+    <div class="code-header">
+      <span>JSON</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>{
+  "success": true,
+  "external_reference": "order_1792148000",
+  "payhero_response": {
+    "success": true,
+    "status": "QUEUED",
+    "reference": "459f-4830-826e-468950aa6264260747",
+    "CheckoutRequestID": "ws_CO_16102026162210086707865597",
+    "external_reference": "order_1792148000"
+  }
+}</code></pre>
+
+    <!-- ============ STATUS ============ -->
+    <h3 id="ep-status">Query Transaction Status</h3>
+    <div class="endpoint">
+      <span class="badge get">GET</span>
+      <span class="path">/api/pay/status/:reference</span>
+    </div>
+
+    <p>
+      Returns the current status of a transaction. The <code>:reference</code> can be any of the transaction's identifiers — <code>external_reference</code>, PayHero's <code>reference</code>, <code>CheckoutRequestID</code>, or <code>mpesa_receipt</code>.
+    </p>
+
+    <h4>Headers</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Header</th><th>Required</th></tr></thead>
+        <tbody><tr><td><code>x-api-key</code></td><td>Yes</td></tr></tbody>
+      </table>
+    </div>
+
+    <h4>Example request</h4>
+    <div class="code-header">
+      <span>JavaScript (fetch)</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>const res = await fetch(
+  'https://payheroapi.onrender.com/api/pay/status/order_1792148000',
+  { headers: { 'x-api-key': 'phk_YOUR_KEY_HERE' } }
+);
+const data = await res.json();
+console.log(data.transaction.status); // 'pending' | 'success' | 'failed'</code></pre>
+
+    <h4>Example response — pending</h4>
+    <div class="code-header">
+      <span>JSON</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>{
+  "source": "payhero",
+  "transaction": {
+    "status": "QUEUED",
+    "external_reference": "order_1792148000",
+    "amount": 100,
+    "phone_number": "254708765597"
+  }
+}</code></pre>
+
+    <h4>Example response — success</h4>
+    <div class="code-header">
+      <span>JSON</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>{
+  "source": "local",
+  "transaction": {
+    "external_reference": "order_1792148000",
+    "status": "success",
+    "mpesa_receipt": "UJGD7B29B0",
+    "amount": 100,
+    "phone_number": "254708765597",
+    "verified_with_payhero": 1,
+    "created_at": "2026-10-16 13:17:02"
+  }
+}</code></pre>
+
+    <!-- ============ WEBHOOKS ============ -->
+    <h3 id="webhooks">Webhooks (Optional)</h3>
+    <p>
+      If your API key has a webhook URL configured, we forward every payment outcome to it. This is faster than polling — you get notified the instant PayHero's callback arrives.
+    </p>
+
+    <h4>Webhook payload</h4>
+    <div class="code-header">
+      <span>POST to your webhook_url</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>{
+  "event": "payment.success",
+  "external_reference": "order_1792148000",
+  "payhero_reference": "459f-4830-826e-468950aa6264260747",
+  "mpesa_receipt": "UJGD7B29B0",
+  "amount": 100,
+  "phone_number": "254708765597",
+  "status": "success",
+  "verified": true,
+  "timestamp": "2026-10-16T13:17:03.449Z"
+}</code></pre>
+
+    <h4>Headers</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Header</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td><code>X-PayHero-Signature</code></td><td>HMAC-SHA256 of the payload using your webhook secret</td></tr>
+          <tr><td><code>X-PayHero-Event</code></td><td>e.g. <code>payment.success</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>Verifying the signature (Node.js)</h4>
+    <div class="code-header">
+      <span>Express handler</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>const crypto = require('crypto');
+
+app.post('/your-webhook', (req, res) => {
+  const signature = req.headers['x-payhero-signature'];
+  const expected = crypto
+    .createHmac('sha256', process.env.WEBHOOK_SECRET)
+    .update(JSON.stringify(req.body))
+    .digest('hex');
+
+  if (signature !== expected) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  // Process the payment
+  if (req.body.event === 'payment.success') {
+    // Fulfill the order
+  }
+
+  res.json({ received: true });
+});</code></pre>
+
+    <div class="callout warn">
+      <strong>Always verify signatures</strong>
+      Webhook endpoints are public. Anyone can POST to them. Verify the signature before trusting the payload.
+    </div>
+
+    <!-- ============ EXAMPLES ============ -->
+    <h2 id="examples">Code Examples</h2>
+
+    <h3>Node.js / Express backend</h3>
+    <div class="code-header">
+      <span>Node.js</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>const API_KEY = process.env.PAYHERO_CENTRAL_KEY;
+const API_BASE = 'https://payheroapi.onrender.com';
+
+async function initiatePayment(phone, amount, reference) {
+  const res = await fetch(`${API_BASE}/api/pay/stk-push`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY,
+    },
+    body: JSON.stringify({
+      phone_number: phone,
+      amount,
+      external_reference: reference,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.message || 'Payment initiation failed');
+  }
+
+  return res.json();
+}
+
+async function checkStatus(reference) {
+  const res = await fetch(`${API_BASE}/api/pay/status/${encodeURIComponent(reference)}`, {
+    headers: { 'x-api-key': API_KEY },
+  });
+  const data = await res.json();
+  return data.transaction;
+}</code></pre>
+
+    <h3>Python backend</h3>
+    <div class="code-header">
+      <span>Python</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>import os
+import requests
+
+API_KEY = os.environ['PAYHERO_CENTRAL_KEY']
+API_BASE = 'https://payheroapi.onrender.com'
+
+def initiate_payment(phone, amount, reference):
+    res = requests.post(
+        f'{API_BASE}/api/pay/stk-push',
+        headers={
+            'Content-Type': 'application/json',
+            'x-api-key': API_KEY,
+        },
+        json={
+            'phone_number': phone,
+            'amount': amount,
+            'external_reference': reference,
+        },
+    )
+    res.raise_for_status()
+    return res.json()
+
+def check_status(reference):
+    res = requests.get(
+        f'{API_BASE}/api/pay/status/{reference}',
+        headers={'x-api-key': API_KEY},
+    )
+    res.raise_for_status()
+    return res.json()['transaction']</code></pre>
+
+    <h3>PHP backend</h3>
+    <div class="code-header">
+      <span>PHP</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>&lt;?php
+$API_KEY = getenv('PAYHERO_CENTRAL_KEY');
+$API_BASE = 'https://payheroapi.onrender.com';
+
+function initiatePayment($phone, $amount, $reference) {
+    global $API_KEY, $API_BASE;
+    $ch = curl_init("$API_BASE/api/pay/stk-push");
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER =&gt; true,
+        CURLOPT_POST =&gt; true,
+        CURLOPT_HTTPHEADER =&gt; [
+            'Content-Type: application/json',
+            "x-api-key: $API_KEY",
+        ],
+        CURLOPT_POSTFIELDS =&gt; json_encode([
+            'phone_number' =&gt; $phone,
+            'amount' =&gt; $amount,
+            'external_reference' =&gt; $reference,
+        ]),
+    ]);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($response, true);
+}
+?&gt;</code></pre>
+
+    <h3>Browser (static site — dev only)</h3>
+    <div class="code-header">
+      <span>Vanilla JS</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code>&lt;script&gt;
+async function pay(phone, amount) {
+  const reference = 'web_' + Date.now();
+
+  const res = await fetch('https://payheroapi.onrender.com/api/pay/stk-push', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': 'phk_YOUR_KEY_HERE', // ⚠️ Exposed — OK for testing only
+    },
+    body: JSON.stringify({
+      phone_number: phone,
+      amount,
+      external_reference: reference,
+    }),
+  });
+
+  const data = await res.json();
+  if (!data.success) {
+    alert('Failed to start payment: ' + data.message);
+    return;
+  }
+
+  // Poll every 3 seconds
+  const interval = setInterval(async () =&gt; {
+    const s = await fetch(
+      'https://payheroapi.onrender.com/api/pay/status/' + reference,
+      { headers: { 'x-api-key': 'phk_YOUR_KEY_HERE' } }
+    ).then(r =&gt; r.json());
+
+    const status = s.transaction?.status;
+    if (status === 'success') {
+      clearInterval(interval);
+      alert('Payment received! Receipt: ' + s.transaction.mpesa_receipt);
+    } else if (status === 'failed') {
+      clearInterval(interval);
+      alert('Payment failed. Please try again.');
+    }
+  }, 3000);
+
+  // Give up after 2 minutes
+  setTimeout(() =&gt; clearInterval(interval), 120000);
+}
+&lt;/script&gt;</code></pre>
+
+    <div class="callout danger">
+      <strong>Do not ship browser code with your API key to production</strong>
+      Anyone can view source. Proxy requests through your own backend or a serverless function instead.
+    </div>
+
+    <!-- ============ SECURITY ============ -->
+    <h2 id="security">Security Best Practices</h2>
+
+    <ul>
+      <li><strong>Never expose API keys</strong> — Call our API from your backend. If you need to call from a browser, use a serverless proxy (Netlify Functions, Cloudflare Workers, Vercel Functions).</li>
+      <li><strong>Use unique external references</strong> — Include a timestamp or UUID. This prevents accidental duplicate charges.</li>
+      <li><strong>Verify webhook signatures</strong> — Always validate <code>X-PayHero-Signature</code> before trusting a webhook payload.</li>
+      <li><strong>Rotate keys regularly</strong> — Create a new key and revoke the old one if a team member leaves or a key is suspect.</li>
+      <li><strong>Bind keys to specific apps</strong> — One key per app. If one key leaks, only that app is affected.</li>
+      <li><strong>Monitor your dashboard</strong> — Unusual transaction patterns or spikes in 403s indicate a compromised key.</li>
+    </ul>
+
+    <!-- ============ TESTING ============ -->
+    <h2 id="testing">Testing &amp; Debugging</h2>
+
+    <h3>Test phone numbers</h3>
+    <p>
+      Safaricom offers no universal test number, but any Safaricom number with an active M-PESA account works for end-to-end testing. Use KES 1 for cheap tests.
+    </p>
+
+    <h3>Common issues</h3>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>403 Invalid API key</td>
+            <td>Key revoked, mistyped, or cache not refreshed</td>
+            <td>Verify key in dashboard; wait 30s for cache; recreate if needed</td>
+          </tr>
+          <tr>
+            <td>STK push returns 200 but no prompt arrives</td>
+            <td>Phone offline, SIM too old, wrong number format</td>
+            <td>Test with a fresh phone; check ResultCode in callback</td>
+          </tr>
+          <tr>
+            <td>Callback never arrives</td>
+            <td>Callback URL not registered with PayHero</td>
+            <td>Set it in PayHero dashboard → Update Account</td>
+          </tr>
+          <tr>
+            <td>Status stays "pending"</td>
+            <td>Customer hasn't entered PIN yet, or callback lost</td>
+            <td>Wait 2 minutes; then check PayHero dashboard directly</td>
+          </tr>
+          <tr>
+            <td>ResultCode 1037</td>
+            <td>Phone unreachable (off, no signal, outdated SIM)</td>
+            <td>Ask customer to check signal or update SIM (<code>*234*6#</code>)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Debugging checklist</h3>
+    <ol>
+      <li>Check <a href="/health">/health</a> — confirms server and Turso are up</li>
+      <li>Check dashboard → Transactions — see every attempt with its status</li>
+      <li>Check dashboard → Analytics → Recent API Usage — see which endpoints are being hit</li>
+      <li>Look at your server logs — every callback is logged with the raw payload</li>
+    </ol>
+
+    <!-- ============ LLM PROMPT ============ -->
+    <h2 id="llm-prompt">LLM Prompt</h2>
+    <p>
+      Paste this into ChatGPT, Claude, Cursor, or any AI coding assistant to have it integrate the PayHero Central API into your app.
+    </p>
+
+    <div class="prompt-box">
+      <h3>Ready-to-paste prompt</h3>
+      <p>Click below to copy the full prompt. Replace the placeholders before sending.</p>
+      <button class="btn" onclick="copyPrompt()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy LLM Prompt
+      </button>
+    </div>
+
+    <div class="code-header">
+      <span>Copy this into your AI coding assistant</span>
+      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre id="llmPromptCode"><code>I need you to integrate M-PESA STK Push payments into my application using a central payment API.
+
+## API Details
+
+- Base URL: https://payheroapi.onrender.com
+- API Key: phk_REPLACE_WITH_YOUR_ACTUAL_KEY
+- Auth: Send the key in the `x-api-key` request header
+- Response format: JSON
+
+## Endpoints
+
+### 1. Initiate STK Push
+POST /api/pay/stk-push
+
+Headers:
+  Content-Type: application/json
+  x-api-key: phk_...
+
+Body:
+{
+  "phone_number": "254708765597",       // required, any Kenyan format
+  "amount": 100,                         // required, KES, 1-500000
+  "external_reference": "order_001"      // required, unique per transaction
+}
+
+Success response (200):
+{
+  "success": true,
+  "external_reference": "order_001",
+  "payhero_response": {
+    "status": "QUEUED",
+    "reference": "459f-4830-826e-468950aa6264260747",
+    "CheckoutRequestID": "ws_CO_..."
+  }
+}
+
+Error response:
+{
+  "error": "PayHero API error",
+  "message": "Human-readable reason"
+}
+
+### 2. Query Status
+GET /api/pay/status/:reference
+
+Headers:
+  x-api-key: phk_...
+
+:reference can be the external_reference, the PayHero reference, the CheckoutRequestID, or the M-PESA receipt.
+
+Response:
+{
+  "transaction": {
+    "external_reference": "order_001",
+    "status": "pending" | "success" | "failed",
+    "mpesa_receipt": "UJGD7B29B0",       // present only on success
+    "amount": 100,
+    "phone_number": "254708765597"
+  }
+}
+
+## Payment Flow I Want
+
+1. User enters phone number and confirms amount in my UI.
+2. My app calls POST /api/pay/stk-push with a unique external_reference.
+3. Show the user a "Check your phone for the M-PESA prompt" message.
+4. Poll GET /api/pay/status/:reference every 3 seconds.
+5. Stop polling when status is "success" or "failed", or after 2 minutes.
+6. On success: show receipt (mpesa_receipt). On failure: show a friendly error.
+
+## Requirements
+
+- Handle network errors gracefully (retry polling, don't crash).
+- Normalize phone numbers: accept 0708..., 254708..., +254708... and convert to 254XXXXXXXXX.
+- Generate a unique external_reference per attempt (e.g. `order_${Date.now()}_${random}`).
+- Show a progress indicator during polling.
+- Handle the following failure reasons with friendly messages:
+  - ResultCode 1037 → "Couldn't reach your phone. Check signal and try again."
+  - ResultCode 1 → "Insufficient M-PESA balance."
+  - ResultCode 1032 → "You cancelled the payment."
+  - ResultCode 2001 → "Wrong PIN. Please try again."
+- Never expose the API key in client-side code for production. If this is a web app, route requests through my backend.
+
+## Tech Stack
+
+[REPLACE THIS with your stack: React, Vue, Node/Express, Python/Django, Flutter, plain HTML/JS, etc.]
+
+## Deliverable
+
+Provide complete, working code:
+- The API integration module/function
+- The UI component showing the payment button, phone input, amount input, and status display
+- Error handling for all failure cases
+- Polling logic with timeout
+
+Do not use any library other than what's already in my project. Use native fetch (or axios if already present).</code></pre>
+
+    <!-- ============ FOOTER ============ -->
+    <div class="footer">
+      PayHero Central API · Documentation v1.0<br>
+      For support, contact your administrator.
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ============================================================
+// THEME
+// ============================================================
+(function initTheme() {
+  const saved = localStorage.getItem('docs_theme') || 'light';
+  document.documentElement.setAttribute('data-theme', saved);
+  updateThemeIcon(saved);
+})();
+
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('docs_theme', next);
+  updateThemeIcon(next);
+}
+function updateThemeIcon(theme) {
+  const icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  icon.innerHTML = theme === 'dark'
+    ? '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>'
+    : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+}
+
+// ============================================================
+// SIDEBAR
+// ============================================================
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('active');
+}
+
+// Highlight current section in sidebar
+const sections = document.querySelectorAll('.content h2[id], .content h3[id]');
+const navLinks = document.querySelectorAll('.nav-link');
+
+function updateActiveSection() {
+  let current = '';
+  const scrollPos = window.scrollY + 100;
+  sections.forEach((section) => {
+    if (section.offsetTop <= scrollPos) {
+      current = section.id;
+    }
+  });
+  navLinks.forEach((link) => {
+    link.classList.toggle('active', link.getAttribute('href') === '#' + current);
+  });
+}
+window.addEventListener('scroll', updateActiveSection, { passive: true });
+updateActiveSection();
+
+// Close sidebar on nav click (mobile)
+navLinks.forEach((link) => {
+  link.addEventListener('click', () => {
+    if (window.innerWidth <= 960) {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebarOverlay').classList.remove('active');
+    }
+  });
+});
+
+// ============================================================
+// COPY HELPERS
+// ============================================================
+function copyCode(btn) {
+  const pre = btn.closest('.code-header').nextElementSibling;
+  if (!pre) return;
+  const code = pre.querySelector('code') || pre;
+  navigator.clipboard.writeText(code.innerText).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 1800);
+  });
+}
+
+function copyPrompt() {
+  const code = document.getElementById('llmPromptCode').innerText;
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = event.target.closest('button');
+    const original = btn.innerHTML;
+    btn.innerHTML = '✓ Copied! Replace the placeholder fields.';
+    setTimeout(() => { btn.innerHTML = original; }, 2500);
+  });
+}
+</script>
+</body>
+</html>
