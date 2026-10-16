@@ -1,201 +1,1539 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PayHero Central API - Admin</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PayHero Central</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
+    :root {
+      --bg: #f7f8fa;
+      --surface: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --text-muted: #6b7280;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --sidebar-bg: #ffffff;
+      --code-bg: #1e293b;
+      --code-text: #e2e8f0;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    }
+    [data-theme="dark"] {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #6366f1;
+      --primary-hover: #818cf8;
+      --sidebar-bg: #1e293b;
+      --shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
-    .container { max-width: 900px; margin: 0 auto; }
-    h1 { margin-bottom: 20px; color: #333; }
-    .card { background: white; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .card h2 { margin-bottom: 16px; color: #555; font-size: 1.1rem; }
-    input, button { padding: 10px 14px; font-size: 14px; border-radius: 6px; border: 1px solid #ddd; }
-    input { width: 100%; margin-bottom: 12px; }
-    button { background: #2563eb; color: white; border: none; cursor: pointer; font-weight: 500; }
-    button:hover { background: #1d4ed8; }
-    button.danger { background: #dc2626; }
-    button.danger:hover { background: #b91c1c; }
-    button.secondary { background: #6b7280; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 13px; }
-    th { background: #f9fafb; font-weight: 600; }
-    .key-display { background: #fef3c7; border: 1px solid #f59e0b; padding: 12px; border-radius: 6px; margin: 12px 0; word-break: break-all; font-family: monospace; font-size: 13px; }
-    .status-active { color: #16a34a; font-weight: 500; }
-    .status-inactive { color: #dc2626; font-weight: 500; }
-    .hidden { display: none; }
-    .flex { display: flex; gap: 10px; }
-    .flex input { flex: 1; }
-    .toast { position: fixed; bottom: 20px; right: 20px; background: #333; color: white; padding: 12px 20px; border-radius: 6px; font-size: 14px; opacity: 0; transition: opacity 0.3s; }
-    .toast.show { opacity: 1; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      transition: background 0.2s, color 0.2s;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ============ AUTH SCREEN ============ */
+    .auth-screen {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: var(--bg);
+    }
+    .auth-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 32px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: var(--shadow);
+    }
+    .auth-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-weight: 700;
+      font-size: 1.25rem;
+    }
+    .auth-logo-mark {
+      width: 32px; height: 32px;
+      background: var(--primary);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: white;
+      font-weight: 800;
+      font-size: 16px;
+    }
+    .auth-sub {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-bottom: 28px;
+    }
+
+    /* ============ LAYOUT ============ */
+    .app {
+      display: none;
+      min-height: 100vh;
+    }
+    .app.active { display: flex; }
+
+    .sidebar {
+      width: 240px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      padding: 20px 0;
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; bottom: 0; left: 0;
+      z-index: 100;
+      transition: transform 0.25s ease;
+    }
+    .sidebar-header {
+      padding: 0 20px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 15px;
+    }
+    .sidebar-nav {
+      flex: 1;
+      padding: 16px 12px;
+      overflow-y: auto;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 13.5px;
+      margin-bottom: 2px;
+      transition: background 0.15s, color 0.15s;
+      user-select: none;
+    }
+    .nav-item:hover { background: var(--bg); color: var(--text); }
+    .nav-item.active {
+      background: var(--primary);
+      color: white;
+    }
+    .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+    .sidebar-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .main {
+      flex: 1;
+      margin-left: 240px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+    .topbar h1 { font-size: 18px; font-weight: 600; }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+
+    .menu-toggle {
+      display: none;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      cursor: pointer;
+      color: var(--text);
+    }
+
+    .content {
+      padding: 24px;
+      flex: 1;
+      max-width: 1400px;
+      width: 100%;
+    }
+
+    /* ============ CARDS & UI ============ */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+    .stat-label {
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .stat-sub {
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    /* ============ FORMS ============ */
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      transition: border 0.15s, box-shadow 0.15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+    }
+    label {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .form-group { margin-bottom: 16px; }
+
+    /* ============ BUTTONS ============ */
+    button {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: none;
+      background: var(--primary);
+      color: white;
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.05s;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    button:hover { background: var(--primary-hover); }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    button.ghost:hover { background: var(--bg); }
+    button.danger { background: var(--danger); }
+    button.danger:hover { background: #dc2626; }
+    button.success { background: var(--success); }
+    button.small { padding: 6px 12px; font-size: 12.5px; }
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn-full { width: 100%; }
+
+    /* ============ TABLES ============ */
+    .table-wrap { overflow-x: auto; margin: -4px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    th {
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      background: var(--bg);
+    }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--bg); }
+
+    /* ============ BADGES ============ */
+    .badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+    .badge-success { background: #d1fae5; color: #065f46; }
+    .badge-pending { background: #fef3c7; color: #92400e; }
+    .badge-failed { background: #fee2e2; color: #991b1b; }
+    .badge-active { background: #d1fae5; color: #065f46; }
+    .badge-inactive { background: #f3f4f6; color: #6b7280; }
+    [data-theme="dark"] .badge-success { background: #064e3b; color: #6ee7b7; }
+    [data-theme="dark"] .badge-pending { background: #78350f; color: #fcd34d; }
+    [data-theme="dark"] .badge-failed { background: #7f1d1d; color: #fca5a5; }
+    [data-theme="dark"] .badge-inactive { background: #334155; color: #94a3b8; }
+
+    /* ============ CHARTS ============ */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .chart-card h3 {
+      font-size: 13.5px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .chart-container { position: relative; height: 260px; }
+
+    /* ============ TERMINAL ============ */
+    .terminal {
+      background: var(--code-bg);
+      border-radius: 10px;
+      padding: 16px;
+      font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+      font-size: 12.5px;
+      color: var(--code-text);
+      height: 320px;
+      overflow-y: auto;
+      line-height: 1.6;
+      border: 1px solid #0f172a;
+    }
+    .terminal-line { white-space: pre-wrap; word-break: break-all; margin-bottom: 2px; }
+    .terminal-input-line { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .terminal-prompt { color: #34d399; font-weight: 600; }
+    .terminal-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--code-text);
+      font-family: inherit;
+      font-size: 12.5px;
+      padding: 2px 0;
+    }
+    .terminal-input:focus { outline: none; box-shadow: none; border: none; }
+    .terminal .ok { color: #34d399; }
+    .terminal .err { color: #f87171; }
+    .terminal .info { color: #60a5fa; }
+    .terminal .dim { color: #94a3b8; }
+
+    /* ============ MODAL ============ */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.active { display: flex; }
+    .modal {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 20px 25px rgba(0,0,0,0.15);
+      border: 1px solid var(--border);
+    }
+    .modal h2 { font-size: 16px; margin-bottom: 12px; }
+
+    /* ============ KEY DISPLAY ============ */
+    .key-box {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      border-radius: 8px;
+      padding: 14px;
+      margin: 12px 0;
+      word-break: break-all;
+      font-family: monospace;
+      font-size: 12.5px;
+      color: #78350f;
+    }
+    [data-theme="dark"] .key-box {
+      background: #78350f;
+      border-color: #b45309;
+      color: #fde68a;
+    }
+
+    /* ============ THEME TOGGLE ============ */
+    .theme-toggle {
+      width: 36px; height: 36px;
+      padding: 0;
+      border-radius: 8px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+    }
+    .theme-toggle:hover { background: var(--bg); }
+
+    /* ============ TOAST ============ */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--text);
+      color: var(--surface);
+      padding: 12px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      z-index: 2000;
+      max-width: 320px;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .helper {
+      color: var(--text-muted);
+      font-size: 12.5px;
+      margin-top: 4px;
+    }
+
+    pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      overflow-x: auto;
+      font-size: 12.5px;
+      font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
+      line-height: 1.6;
+    }
+
+    /* ============ RESPONSIVE ============ */
+    @media (max-width: 900px) {
+      .sidebar {
+        transform: translateX(-100%);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .menu-toggle { display: grid; place-items: center; }
+      .content { padding: 16px; }
+      .topbar { padding: 12px 16px; }
+      .topbar h1 { font-size: 16px; }
+    }
+    @media (max-width: 500px) {
+      .stat-value { font-size: 22px; }
+      .chart-grid { grid-template-columns: 1fr; }
+      th, td { padding: 9px 10px; }
+    }
+
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 90;
+    }
+    .overlay.active { display: block; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>PayHero Central API Admin</h1>
 
-    <!-- Login -->
-    <div id="loginSection" class="card">
-      <h2>Admin Login</h2>
-      <input type="password" id="adminPassword" placeholder="Admin Password">
-      <button onclick="login()">Login</button>
-    </div>
-
-    <!-- Dashboard -->
-    <div id="dashboard" class="hidden">
-      <div class="card">
-        <h2>Generate New API Key</h2>
-        <input type="text" id="keyName" placeholder="App Name (e.g., Shop App)">
-        <input type="text" id="channelId" placeholder="PayHero Channel ID">
-        <button onclick="createKey()">Generate Key</button>
-        <div id="newKeyDisplay"></div>
+  <!-- ============ AUTH SCREEN ============ -->
+  <div class="auth-screen" id="authScreen">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <div class="auth-logo-mark">P</div>
+        <span>PayHero Central</span>
       </div>
-
-      <div class="card">
-        <h2>Active API Keys</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>App Identifier</th>
-              <th>Channel ID</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="keysTableBody"></tbody>
-        </table>
-      </div>
-
-      <div class="card">
-        <h2>Usage Instructions</h2>
-        <p style="margin-bottom: 12px; color: #666;">
-          Use the generated API Key in your applications via the <code>x-api-key</code> header.
-        </p>
-        <h3 style="font-size: 0.95rem; margin: 16px 0 8px;">Initiate STK Push:</h3>
-        <pre style="background: #f3f4f6; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px;">POST /api/pay/stk-push
-Headers: { "x-api-key": "YOUR_KEY", "Content-Type": "application/json" }
-Body: {
-  "phone_number": "254712345678",
-  "amount": 100,
-  "external_reference": "order_001",
-  "callback_url": "https://your-app.com/callback" (optional)
-}</pre>
-        <h3 style="font-size: 0.95rem; margin: 16px 0 8px;">Query Transaction:</h3>
-        <pre style="background: #f3f4f6; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px;">GET /api/pay/status/order_001
-Headers: { "x-api-key": "YOUR_KEY" }</pre>
-      </div>
+      <p class="auth-sub">Sign in to manage your payment infrastructure</p>
+      <form onsubmit="event.preventDefault(); login();">
+        <div class="form-group">
+          <label>Admin Password</label>
+          <input type="password" id="adminPassword" placeholder="••••••••" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn-full" id="loginBtn">Sign in</button>
+      </form>
     </div>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <!-- ============ APP ============ -->
+  <div class="app" id="app">
 
-  <script>
-    let adminToken = '';
+    <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
 
-    function showToast(msg) {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.classList.add('show');
-      setTimeout(() => t.classList.remove('show'), 3000);
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="auth-logo-mark" style="width:26px;height:26px;font-size:13px;">P</div>
+        <span>PayHero Central</span>
+      </div>
+      <nav class="sidebar-nav" id="nav">
+        <div class="nav-item active" data-page="dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+          Dashboard
+        </div>
+        <div class="nav-item" data-page="keys">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 7a2 2 0 0 1 2 2m4 0a6 6 0 0 1-7.743 5.743L11 17H9v2H7v2H4a1 1 0 0 1-1-1v-2.586a1 1 0 0 1 .293-.707l5.964-5.964A6 6 0 1 1 21 9z"/></svg>
+          API Keys
+        </div>
+        <div class="nav-item" data-page="transactions">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+          Transactions
+        </div>
+        <div class="nav-item" data-page="analytics">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          Analytics
+        </div>
+        <div class="nav-item" data-page="docs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Docs & Terminal
+        </div>
+        <div class="nav-item" data-page="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Settings
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="ghost btn-full small" onclick="logout()">Sign out</button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" onclick="toggleSidebar()" aria-label="Menu">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <h1 id="pageTitle">Dashboard</h1>
+        </div>
+        <div class="topbar-right">
+          <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" id="themeBtn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="themeIcon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="content" id="content"></main>
+    </div>
+  </div>
+
+  <!-- ============ MODAL ============ -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal" id="modalContent"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let adminToken = sessionStorage.getItem('ph_admin') || '';
+let currentPage = 'dashboard';
+let charts = {};
+
+// ============================================================
+// INIT
+// ============================================================
+(function init() {
+  const savedTheme = localStorage.getItem('ph_theme') || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  updateThemeIcon(savedTheme);
+
+  if (adminToken) {
+    showApp();
+  }
+})();
+
+// ============================================================
+// THEME
+// ============================================================
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('ph_theme', next);
+  updateThemeIcon(next);
+  if (currentPage === 'analytics') renderAnalytics();
+}
+function updateThemeIcon(theme) {
+  const icon = document.getElementById('themeIcon');
+  if (!icon) return;
+  icon.innerHTML = theme === 'dark'
+    ? '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>'
+    : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+async function login() {
+  const password = document.getElementById('adminPassword').value;
+  if (!password) return;
+
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+
+  try {
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    if (res.ok) {
+      adminToken = password;
+      sessionStorage.setItem('ph_admin', password);
+      showApp();
+    } else {
+      toast('Invalid password');
     }
+  } catch (e) {
+    toast('Login failed');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
+  }
+}
 
-    async function login() {
-      const password = document.getElementById('adminPassword').value;
-      if (!password) return showToast('Enter password');
-      
+function logout() {
+  adminToken = '';
+  sessionStorage.removeItem('ph_admin');
+  location.reload();
+}
+
+function showApp() {
+  document.getElementById('authScreen').style.display = 'none';
+  document.getElementById('app').classList.add('active');
+  navigate('dashboard');
+}
+
+// ============================================================
+// NAV
+// ============================================================
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('active');
+}
+
+document.getElementById('nav').addEventListener('click', (e) => {
+  const item = e.target.closest('.nav-item');
+  if (!item) return;
+  navigate(item.dataset.page);
+});
+
+function navigate(page) {
+  currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.toggle('active', n.dataset.page === page);
+  });
+  document.getElementById('pageTitle').textContent =
+    { dashboard: 'Dashboard', keys: 'API Keys', transactions: 'Transactions',
+      analytics: 'Analytics', docs: 'Docs & Terminal', settings: 'Settings' }[page];
+
+  if (window.innerWidth <= 900) {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('overlay').classList.remove('active');
+  }
+
+  // destroy charts
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+
+  const renderers = {
+    dashboard: renderDashboard,
+    keys: renderKeys,
+    transactions: renderTransactions,
+    analytics: renderAnalytics,
+    docs: renderDocs,
+    settings: renderSettings,
+  };
+  renderers[page]();
+}
+
+// ============================================================
+// API HELPER
+// ============================================================
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': adminToken,
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 403) {
+    logout();
+    throw new Error('Session expired');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), 3000);
+}
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  const date = new Date(d.includes('T') ? d : d.replace(' ', 'T') + 'Z');
+  return date.toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' });
+}
+function fmtMoney(n) {
+  return 'KES ' + Number(n || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function statusBadge(s) {
+  const cls = s === 'success' ? 'badge-success'
+    : s === 'pending' ? 'badge-pending'
+    : s === 'failed' ? 'badge-failed' : 'badge-inactive';
+  return `<span class="badge ${cls}">${esc(s || 'unknown')}</span>`;
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+async function renderDashboard() {
+  const c = document.getElementById('content');
+  c.innerHTML = '<div class="empty-state">Loading dashboard…</div>';
+
+  try {
+    const [stats, txns, chartsData] = await Promise.all([
+      api('/api/admin/stats'),
+      api('/api/admin/transactions?limit=8'),
+      api('/api/admin/charts'),
+    ]);
+
+    c.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Revenue</div>
+          <div class="stat-value">${fmtMoney(stats.total_revenue)}</div>
+          <div class="stat-sub">${stats.success_count} successful payments</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Transactions</div>
+          <div class="stat-value">${stats.total_transactions.toLocaleString()}</div>
+          <div class="stat-sub">${stats.recent_transactions} in last 24h</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active Keys</div>
+          <div class="stat-value">${stats.active_keys}</div>
+          <div class="stat-sub">of ${stats.total_keys} total</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Success Rate</div>
+          <div class="stat-value">${
+            stats.total_transactions
+              ? Math.round((stats.success_count / stats.total_transactions) * 100)
+              : 0
+          }%</div>
+          <div class="stat-sub">${stats.pending_count} pending · ${stats.failed_count} failed</div>
+        </div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Transactions (Last 7 Days)</h3>
+          <div class="chart-container"><canvas id="chartDaily"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Status Breakdown</h3>
+          <div class="chart-container"><canvas id="chartStatus"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recent Transactions</div>
+        <div class="table-wrap">
+          ${txns.length === 0 ? '<div class="empty-state">No transactions yet</div>' : `
+          <table>
+            <thead><tr>
+              <th>Reference</th><th>App</th><th>Phone</th>
+              <th>Amount</th><th>Status</th><th>Created</th>
+            </tr></thead>
+            <tbody>
+              ${txns.map(t => `
+                <tr>
+                  <td><code style="font-size:12px;">${esc(t.external_reference)}</code></td>
+                  <td>${esc(t.app_identifier || '—')}</td>
+                  <td>${esc(t.phone_number)}</td>
+                  <td>${fmtMoney(t.amount)}</td>
+                  <td>${statusBadge(t.status)}</td>
+                  <td>${fmtDate(t.created_at)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>`}
+        </div>
+      </div>
+    `;
+
+    drawDailyChart(chartsData.daily);
+    drawStatusChart(chartsData.byStatus);
+  } catch (e) {
+    c.innerHTML = `<div class="empty-state">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+function chartColors() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return {
+    text: dark ? '#94a3b8' : '#6b7280',
+    grid: dark ? '#334155' : '#e5e7eb',
+  };
+}
+
+function drawDailyChart(rows) {
+  const ctx = document.getElementById('chartDaily');
+  if (!ctx) return;
+  const { text, grid } = chartColors();
+  const labels = rows.map(r => r.day);
+  const counts = rows.map(r => r.count);
+  const revenue = rows.map(r => r.revenue);
+
+  charts.daily = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Transactions',
+          data: counts,
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.1)',
+          fill: true,
+          tension: 0.35,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Revenue (KES)',
+          data: revenue,
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16,185,129,0.1)',
+          fill: true,
+          tension: 0.35,
+          yAxisID: 'y1',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: text, font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: text, font: { size: 10 } }, grid: { color: grid } },
+        y: { ticks: { color: text, font: { size: 10 } }, grid: { color: grid }, position: 'left' },
+        y1: { ticks: { color: text, font: { size: 10 } }, grid: { display: false }, position: 'right' },
+      },
+    },
+  });
+}
+
+function drawStatusChart(rows) {
+  const ctx = document.getElementById('chartStatus');
+  if (!ctx) return;
+  const { text } = chartColors();
+  const colorMap = { success: '#10b981', pending: '#f59e0b', failed: '#ef4444' };
+  const labels = rows.map(r => r.status);
+  const data = rows.map(r => r.count);
+  const colors = labels.map(l => colorMap[l] || '#94a3b8');
+
+  charts.status = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: colors, borderWidth: 0 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: text, font: { size: 11 }, padding: 12 } },
+      },
+      cutout: '65%',
+    },
+  });
+}
+
+// ============================================================
+// API KEYS
+// ============================================================
+async function renderKeys() {
+  const c = document.getElementById('content');
+  c.innerHTML = '<div class="empty-state">Loading keys…</div>';
+
+  try {
+    const keys = await api('/api/admin/keys');
+    c.innerHTML = `
+      <div class="card">
+        <div class="card-title">Generate New API Key</div>
+        <div class="form-group">
+          <label>Application Name</label>
+          <input id="newKeyName" placeholder="e.g. Shop App" />
+        </div>
+        <div class="form-group">
+          <label>PayHero Channel ID</label>
+          <input id="newKeyChannel" placeholder="e.g. 1234" />
+        </div>
+        <div class="form-group">
+          <label>App Identifier (optional)</label>
+          <input id="newKeyAppId" placeholder="defaults to application name" />
+        </div>
+        <button onclick="createKey()">Generate Key</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">API Keys <span style="color:var(--text-muted);font-weight:400;font-size:12px;">${keys.length} total</span></div>
+        <div class="table-wrap">
+          ${keys.length === 0 ? '<div class="empty-state">No keys yet</div>' : `
+          <table>
+            <thead><tr>
+              <th>Name</th><th>Preview</th><th>Channel</th>
+              <th>Status</th><th>Last Used</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+              ${keys.map(k => `
+                <tr>
+                  <td><strong>${esc(k.name)}</strong></td>
+                  <td><code style="font-size:12px;">${esc(k.key_preview || '—')}</code></td>
+                  <td>${esc(k.channel_id)}</td>
+                  <td>${k.is_active
+                    ? '<span class="badge badge-active">Active</span>'
+                    : '<span class="badge badge-inactive">Revoked</span>'}</td>
+                  <td>${k.last_used_at ? fmtDate(k.last_used_at) : '—'}</td>
+                  <td>
+                    <div class="btn-group">
+                      ${k.is_active
+                        ? `<button class="small danger" onclick="revokeKey(${k.id})">Revoke</button>`
+                        : `<button class="small success" onclick="activateKey(${k.id})">Activate</button>`}
+                      <button class="small ghost" onclick="deleteKey(${k.id})">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>`}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Verify an API Key</div>
+        <div class="form-group">
+          <label>Paste API Key</label>
+          <input id="verifyKeyInput" placeholder="phk_..." />
+        </div>
+        <button class="ghost" onclick="verifyKey()">Verify</button>
+        <div id="verifyResult" style="margin-top:12px;"></div>
+      </div>
+    `;
+  } catch (e) {
+    c.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`;
+  }
+}
+
+async function createKey() {
+  const name = document.getElementById('newKeyName').value.trim();
+  const channel_id = document.getElementById('newKeyChannel').value.trim();
+  const app_identifier = document.getElementById('newKeyAppId').value.trim();
+
+  if (!name || !channel_id) return toast('Name and Channel ID required');
+
+  try {
+    const data = await api('/api/admin/keys', {
+      method: 'POST',
+      body: JSON.stringify({ name, channel_id, app_identifier }),
+    });
+
+    openModal(`
+      <h2>API Key Created</h2>
+      <p class="helper">Copy this key now. You will not see it again.</p>
+      <div class="key-box">${esc(data.api_key)}</div>
+      <button class="btn-full" onclick="copyKey('${data.api_key}')">Copy to clipboard</button>
+      <button class="ghost btn-full" style="margin-top:8px;" onclick="closeModal(); renderKeys();">Done</button>
+    `);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+function copyKey(key) {
+  navigator.clipboard.writeText(key).then(() => toast('Copied to clipboard'));
+}
+
+async function revokeKey(id) {
+  if (!confirm('Revoke this key? Apps using it will stop working.')) return;
+  await api(`/api/admin/keys/${id}/revoke`, { method: 'PATCH' });
+  toast('Key revoked');
+  renderKeys();
+}
+
+async function activateKey(id) {
+  await api(`/api/admin/keys/${id}/activate`, { method: 'PATCH' });
+  toast('Key activated');
+  renderKeys();
+}
+
+async function deleteKey(id) {
+  if (!confirm('Permanently delete this key?')) return;
+  await api(`/api/admin/keys/${id}`, { method: 'DELETE' });
+  toast('Key deleted');
+  renderKeys();
+}
+
+async function verifyKey() {
+  const k = document.getElementById('verifyKeyInput').value.trim();
+  if (!k) return toast('Enter a key');
+  const out = document.getElementById('verifyResult');
+  try {
+    const r = await api('/api/admin/keys/verify', {
+      method: 'POST',
+      body: JSON.stringify({ api_key: k }),
+    });
+    out.innerHTML = r.valid
+      ? `<div class="badge badge-success">Valid</span> &nbsp; <strong>${esc(r.name)}</strong> · Channel ${esc(r.channel_id)}</div>`
+      : `<div class="badge badge-failed">Invalid</div> &nbsp; ${esc(r.reason || 'Not active')}`;
+  } catch (e) {
+    out.innerHTML = `<span class="badge badge-failed">Error</span> ${esc(e.message)}`;
+  }
+}
+
+// ============================================================
+// TRANSACTIONS
+// ============================================================
+async function renderTransactions() {
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-title">
+        <span>Filter Transactions</span>
+      </div>
+      <div class="btn-group">
+        <button class="small ghost" data-filter="all" onclick="loadTxns('all', this)">All</button>
+        <button class="small ghost" data-filter="success" onclick="loadTxns('success', this)">Success</button>
+        <button class="small ghost" data-filter="pending" onclick="loadTxns('pending', this)">Pending</button>
+        <button class="small ghost" data-filter="failed" onclick="loadTxns('failed', this)">Failed</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Transactions</div>
+      <div id="txnList"><div class="empty-state">Loading…</div></div>
+    </div>
+  `;
+  loadTxns('all');
+}
+
+async function loadTxns(status, btn) {
+  if (btn) {
+    document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const list = document.getElementById('txnList');
+  list.innerHTML = '<div class="empty-state">Loading…</div>';
+
+  try {
+    const txns = await api(`/api/admin/transactions?status=${status}&limit=100`);
+    if (txns.length === 0) {
+      list.innerHTML = '<div class="empty-state">No transactions</div>';
+      return;
+    }
+    list.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Reference</th><th>PayHero Ref</th><th>App</th>
+            <th>Phone</th><th>Amount</th><th>Status</th><th>Created</th>
+          </tr></thead>
+          <tbody>
+            ${txns.map(t => `
+              <tr>
+                <td><code style="font-size:12px;">${esc(t.external_reference)}</code></td>
+                <td><code style="font-size:12px;">${esc(t.payhero_reference || '—')}</code></td>
+                <td>${esc(t.app_identifier || '—')}</td>
+                <td>${esc(t.phone_number)}</td>
+                <td>${fmtMoney(t.amount)}</td>
+                <td>${statusBadge(t.status)}</td>
+                <td>${fmtDate(t.created_at)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`;
+  }
+}
+
+// ============================================================
+// ANALYTICS
+// ============================================================
+async function renderAnalytics() {
+  const c = document.getElementById('content');
+  c.innerHTML = '<div class="empty-state">Loading analytics…</div>';
+
+  try {
+    const data = await api('/api/admin/charts');
+    c.innerHTML = `
+      <div class="chart-grid">
+        <div class="chart-card" style="grid-column: span 2;">
+          <h3>Daily Volume & Revenue</h3>
+          <div class="chart-container"><canvas id="chartBar"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Top Apps by Transaction Count</h3>
+          <div class="chart-container"><canvas id="chartApps"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Top Apps by Revenue</div>
+        <div class="table-wrap">
+          ${data.byApp.length === 0 ? '<div class="empty-state">No data</div>' : `
+          <table>
+            <thead><tr><th>App</th><th>Transactions</th><th>Revenue</th></tr></thead>
+            <tbody>
+              ${data.byApp.map(a => `
+                <tr>
+                  <td>${esc(a.app_identifier || '—')}</td>
+                  <td>${a.count}</td>
+                  <td>${fmtMoney(a.revenue)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>`}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recent API Usage (7d)</div>
+        <div class="table-wrap">
+          ${data.recentRequests.length === 0 ? '<div class="empty-state">No requests logged</div>' : `
+          <table>
+            <thead><tr><th>Method</th><th>Endpoint</th><th>Count</th></tr></thead>
+            <tbody>
+              ${data.recentRequests.map(r => `
+                <tr>
+                  <td><span class="badge badge-inactive">${esc(r.method)}</span></td>
+                  <td><code style="font-size:12px;">${esc(r.endpoint)}</code></td>
+                  <td>${r.count}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>`}
+        </div>
+      </div>
+    `;
+
+    drawBarChart(data.daily);
+    drawAppsChart(data.byApp);
+  } catch (e) {
+    c.innerHTML = `<div class="empty-state">Failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function drawBarChart(rows) {
+  const ctx = document.getElementById('chartBar');
+  if (!ctx) return;
+  const { text, grid } = chartColors();
+  charts.bar = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.day),
+      datasets: [
+        { label: 'Transactions', data: rows.map(r => r.count), backgroundColor: '#6366f1', borderRadius: 6, yAxisID: 'y' },
+        { label: 'Revenue (KES)', data: rows.map(r => r.revenue), backgroundColor: '#10b981', borderRadius: 6, yAxisID: 'y1' },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: text, font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: text, font: { size: 10 } }, grid: { color: grid } },
+        y: { ticks: { color: text, font: { size: 10 } }, grid: { color: grid }, position: 'left' },
+        y1: { ticks: { color: text, font: { size: 10 } }, grid: { display: false }, position: 'right' },
+      },
+    },
+  });
+}
+
+function drawAppsChart(rows) {
+  const ctx = document.getElementById('chartApps');
+  if (!ctx) return;
+  const { text } = chartColors();
+  charts.apps = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.app_identifier || 'unknown'),
+      datasets: [{
+        label: 'Transactions',
+        data: rows.map(r => r.count),
+        backgroundColor: '#8b5cf6',
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: text, font: { size: 10 } }, grid: { color: grid } },
+        y: { ticks: { color: text, font: { size: 10 } }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+// ============================================================
+// DOCS & TERMINAL
+// ============================================================
+function renderDocs() {
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-title">Quick Start</div>
+      <p class="helper" style="margin-bottom:12px;">Use your API key in the <code>x-api-key</code> header. All requests are JSON.</p>
+      <h3 style="font-size:13px;margin:16px 0 8px;">Initiate STK Push</h3>
+      <pre>POST /api/pay/stk-push
+Headers:
+  x-api-key: phk_xxxxxxxxxxxx
+  Content-Type: application/json
+
+Body:
+{
+  "phone_number": "254712345678",
+  "amount": 100,
+  "external_reference": "order_001",
+  "callback_url": "https://your-app.com/callback"   // optional
+}</pre>
+      <h3 style="font-size:13px;margin:16px 0 8px;">Query Transaction Status</h3>
+      <pre>GET /api/pay/status/order_001
+Headers:
+  x-api-key: phk_xxxxxxxxxxxx</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Live API Terminal</div>
+      <p class="helper" style="margin-bottom:12px;">
+        Try it out. Type <code>help</code> to see commands.
+        Set your key with <code>set-key phk_...</code>, then try <code>stk 254712345678 100 order_1</code>.
+      </p>
+      <div class="terminal" id="terminal"></div>
+    </div>
+  `;
+  initTerminal();
+}
+
+// ============================================================
+// TERMINAL
+// ============================================================
+let terminalState = { apiKey: '', history: [], histIndex: -1 };
+
+function initTerminal() {
+  const t = document.getElementById('terminal');
+  t.innerHTML = '';
+  printLine('<span class="info">PayHero Central API Terminal</span>');
+  printLine('<span class="dim">Type</span> help <span class="dim">for available commands.</span>');
+  printLine('');
+  renderInputLine();
+  t.scrollTop = t.scrollHeight;
+}
+
+function printLine(html) {
+  const t = document.getElementById('terminal');
+  const d = document.createElement('div');
+  d.className = 'terminal-line';
+  d.innerHTML = html;
+  // insert before input line
+  const inputLine = t.querySelector('.terminal-input-line');
+  if (inputLine) t.insertBefore(d, inputLine);
+  else t.appendChild(d);
+  t.scrollTop = t.scrollHeight;
+}
+
+function renderInputLine() {
+  const t = document.getElementById('terminal');
+  const old = t.querySelector('.terminal-input-line');
+  if (old) old.remove();
+  const line = document.createElement('div');
+  line.className = 'terminal-input-line';
+  line.innerHTML = `<span class="terminal-prompt">$</span><input class="terminal-input" id="termInput" autocomplete="off" spellcheck="false" />`;
+  t.appendChild(line);
+  const input = document.getElementById('termInput');
+  input.focus();
+  input.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      const cmd = input.value.trim();
+      if (!cmd) return;
+      printLine(`<span class="terminal-prompt">$</span> ${esc(cmd)}`);
+      terminalState.history.push(cmd);
+      terminalState.histIndex = terminalState.history.length;
+      input.value = '';
+      await runCommand(cmd);
+      renderInputLine();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (terminalState.histIndex > 0) {
+        terminalState.histIndex--;
+        input.value = terminalState.history[terminalState.histIndex];
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (terminalState.histIndex < terminalState.history.length - 1) {
+        terminalState.histIndex++;
+        input.value = terminalState.history[terminalState.histIndex];
+      } else {
+        terminalState.histIndex = terminalState.history.length;
+        input.value = '';
+      }
+    }
+  });
+}
+
+async function runCommand(cmd) {
+  const parts = cmd.split(/\s+/);
+  const [name, ...args] = parts;
+
+  switch (name) {
+    case 'help':
+      printLine('<span class="info">Commands:</span>');
+      printLine('  set-key &lt;phk_...&gt;       Set the API key for subsequent requests');
+      printLine('  key                    Show current key (masked)');
+      printLine('  clear-key              Remove stored key');
+      printLine('  stk &lt;phone&gt; &lt;amount&gt; &lt;ref&gt;  Initiate STK push');
+      printLine('  status &lt;ref&gt;           Query transaction status');
+      printLine('  verify &lt;phk_...&gt;       Verify a key using admin session');
+      printLine('  clear                  Clear terminal');
+      break;
+    case 'set-key':
+      if (!args[0]) return printLine('<span class="err">Usage: set-key phk_...</span>');
+      terminalState.apiKey = args[0];
+      printLine('<span class="ok">✓ Key set.</span>');
+      break;
+    case 'key':
+      printLine(terminalState.apiKey
+        ? `<span class="ok">Current key:</span> ${esc(terminalState.apiKey.slice(0, 12))}...${esc(terminalState.apiKey.slice(-4))}`
+        : '<span class="dim">No key set.</span>');
+      break;
+    case 'clear-key':
+      terminalState.apiKey = '';
+      printLine('<span class="ok">✓ Key cleared.</span>');
+      break;
+    case 'clear':
+      initTerminal();
+      return;
+    case 'stk': {
+      const [phone, amount, ref] = args;
+      if (!phone || !amount || !ref) return printLine('<span class="err">Usage: stk &lt;phone&gt; &lt;amount&gt; &lt;ref&gt;</span>');
+      if (!terminalState.apiKey) return printLine('<span class="err">No API key set. Use set-key first.</span>');
+      printLine('<span class="dim">Sending STK push…</span>');
       try {
-        const res = await fetch('/api/admin/keys', {
-          headers: { 'x-admin-token': password }
+        const res = await fetch('/api/pay/stk-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': terminalState.apiKey },
+          body: JSON.stringify({ phone_number: phone, amount: Number(amount), external_reference: ref }),
         });
+        const data = await res.json();
         if (res.ok) {
-          adminToken = password;
-          document.getElementById('loginSection').classList.add('hidden');
-          document.getElementById('dashboard').classList.remove('hidden');
-          loadKeys();
+          printLine('<span class="ok">✓ Request accepted</span>');
+          printLine(JSON.stringify(data, null, 2));
         } else {
-          showToast('Invalid password');
+          printLine('<span class="err">✗ ' + esc(data.error || 'Request failed') + '</span>');
+          if (data.details) printLine(esc(JSON.stringify(data.details)));
         }
       } catch (e) {
-        showToast('Login failed');
+        printLine('<span class="err">✗ ' + esc(e.message) + '</span>');
       }
+      break;
     }
-
-    async function loadKeys() {
-      const res = await fetch('/api/admin/keys', {
-        headers: { 'x-admin-token': adminToken }
-      });
-      const keys = await res.json();
-      
-      const tbody = document.getElementById('keysTableBody');
-      tbody.innerHTML = keys.map(k => `
-        <tr>
-          <td>${escapeHtml(k.name)}</td>
-          <td>${escapeHtml(k.app_identifier || '-')}</td>
-          <td>${escapeHtml(k.channel_id)}</td>
-          <td class="${k.is_active ? 'status-active' : 'status-inactive'}">
-            ${k.is_active ? 'Active' : 'Revoked'}
-          </td>
-          <td>${new Date(k.created_at).toLocaleDateString()}</td>
-          <td>
-            ${k.is_active ? `<button class="danger" onclick="revokeKey(${k.id})">Revoke</button>` : ''}
-          </td>
-        </tr>
-      `).join('');
-    }
-
-    function escapeHtml(s) {
-      const div = document.createElement('div');
-      div.textContent = s;
-      return div.innerHTML;
-    }
-
-    async function createKey() {
-      const name = document.getElementById('keyName').value.trim();
-      const channelId = document.getElementById('channelId').value.trim();
-      
-      if (!name || !channelId) return showToast('Name and Channel ID required');
-
-      const res = await fetch('/api/admin/keys', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-token': adminToken
-        },
-        body: JSON.stringify({ name, channel_id: channelId })
-      });
-
-      const data = await res.json();
-      
-      if (res.ok) {
-        document.getElementById('newKeyDisplay').innerHTML = `
-          <div class="key-display">
-            <strong>Your API Key (copy now, never shown again):</strong><br>
-            ${data.api_key}
-          </div>
-        `;
-        document.getElementById('keyName').value = '';
-        document.getElementById('channelId').value = '';
-        loadKeys();
-        showToast('API Key created');
-      } else {
-        showToast(data.error || 'Failed to create key');
+    case 'status': {
+      const [ref] = args;
+      if (!ref) return printLine('<span class="err">Usage: status &lt;ref&gt;</span>');
+      if (!terminalState.apiKey) return printLine('<span class="err">No API key set. Use set-key first.</span>');
+      try {
+        const res = await fetch(`/api/pay/status/${encodeURIComponent(ref)}`, {
+          headers: { 'x-api-key': terminalState.apiKey },
+        });
+        const data = await res.json();
+        if (res.ok) {
+          printLine('<span class="ok">✓ Response</span>');
+          printLine(JSON.stringify(data, null, 2));
+        } else {
+          printLine('<span class="err">✗ ' + esc(data.error || 'Request failed') + '</span>');
+        }
+      } catch (e) {
+        printLine('<span class="err">✗ ' + esc(e.message) + '</span>');
       }
+      break;
     }
+    case 'verify': {
+      const [key] = args;
+      if (!key) return printLine('<span class="err">Usage: verify &lt;phk_...&gt;</span>');
+      try {
+        const r = await api('/api/admin/keys/verify', {
+          method: 'POST',
+          body: JSON.stringify({ api_key: key }),
+        });
+        printLine(r.valid
+          ? `<span class="ok">✓ Valid</span> — ${esc(r.name)} (channel ${esc(r.channel_id)})`
+          : `<span class="err">✗ Invalid</span> — ${esc(r.reason || 'not active')}`);
+      } catch (e) {
+        printLine('<span class="err">✗ ' + esc(e.message) + '</span>');
+      }
+      break;
+    }
+    default:
+      printLine(`<span class="err">Unknown command:</span> ${esc(name)}. Type <span class="info">help</span>.`);
+  }
+}
 
-    async function revokeKey(id) {
-      if (!confirm('Revoke this key? Apps using it will stop working.')) return;
-      
-      await fetch(`/api/admin/keys/${id}/revoke`, {
-        method: 'PATCH',
-        headers: { 'x-admin-token': adminToken }
-      });
-      
-      loadKeys();
-      showToast('Key revoked');
-    }
-  </script>
+// ============================================================
+// SETTINGS
+// ============================================================
+async function renderSettings() {
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-title">Session</div>
+      <p class="helper" style="margin-bottom:12px;">You are signed in as administrator. Sessions are stored in your browser tab and cleared on sign-out.</p>
+      <button class="danger" onclick="logout()">Sign out</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Appearance</div>
+      <div class="btn-group">
+        <button class="ghost" onclick="setTheme('light')">Light theme</button>
+        <button class="ghost" onclick="setTheme('dark')">Dark theme</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">System Information</div>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr><td>API Base URL</td><td><code>${esc(location.origin)}</code></td></tr>
+            <tr><td>Callback URL</td><td><code>${esc(location.origin)}/api/payhero/callback</code></td></tr>
+            <tr><td>STK Push Endpoint</td><td><code>POST /api/pay/stk-push</code></td></tr>
+            <tr><td>Status Endpoint</td><td><code>GET /api/pay/status/:reference</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('ph_theme', theme);
+  updateThemeIcon(theme);
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+function openModal(html) {
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalBackdrop').classList.add('active');
+}
+function closeModal() {
+  document.getElementById('modalBackdrop').classList.remove('active');
+}
+document.getElementById('modalBackdrop').addEventListener('click', (e) => {
+  if (e.target.id === 'modalBackdrop') closeModal();
+});
+</script>
 </body>
 </html>
