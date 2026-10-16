@@ -48,7 +48,6 @@ async function initDB() {
     )
   `);
 
-  // Request log table for stats
   await db.execute(`
     CREATE TABLE IF NOT EXISTS request_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,6 +151,13 @@ function adminAuth(req, res, next) {
 }
 
 // ============================================================
+// HEALTH CHECK (must respond instantly for Render)
+// ============================================================
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ============================================================
 // ADMIN ROUTES
 // ============================================================
 
@@ -164,168 +170,205 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 app.get('/api/admin/keys', adminAuth, async (req, res) => {
-  const result = await db.execute(
-    'SELECT id, key_preview, name, app_identifier, channel_id, is_active, created_at, last_used_at FROM api_keys ORDER BY created_at DESC'
-  );
-  res.json(result.rows);
+  try {
+    const result = await db.execute(
+      'SELECT id, key_preview, name, app_identifier, channel_id, is_active, created_at, last_used_at FROM api_keys ORDER BY created_at DESC'
+    );
+    res.json(result.rows);
+  } catch (e) {
+    console.error('List keys error:', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/admin/keys', adminAuth, async (req, res) => {
-  const { name, app_identifier, channel_id } = req.body;
+  try {
+    const { name, app_identifier, channel_id } = req.body;
 
-  if (!name || !channel_id) {
-    return res.status(400).json({ error: 'Name and Channel ID are required' });
+    if (!name || !channel_id) {
+      return res.status(400).json({ error: 'Name and Channel ID are required' });
+    }
+
+    const newKey = generateApiKey();
+    const keyHash = hashKey(newKey);
+    const preview = newKey.slice(0, 12) + '...' + newKey.slice(-4);
+
+    await db.execute({
+      sql: 'INSERT INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id) VALUES (?, ?, ?, ?, ?)',
+      args: [keyHash, preview, name, app_identifier || name, channel_id],
+    });
+
+    res.json({
+      api_key: newKey,
+      message: 'Store this key securely. It will not be shown again.',
+      name,
+      channel_id,
+    });
+  } catch (e) {
+    console.error('Create key error:', e);
+    res.status(500).json({ error: e.message });
   }
-
-  const newKey = generateApiKey();
-  const keyHash = hashKey(newKey);
-  const preview = newKey.slice(0, 12) + '...' + newKey.slice(-4);
-
-  await db.execute({
-    sql: 'INSERT INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id) VALUES (?, ?, ?, ?, ?)',
-    args: [keyHash, preview, name, app_identifier || name, channel_id],
-  });
-
-  res.json({
-    api_key: newKey,
-    message: 'Store this key securely. It will not be shown again.',
-    name,
-    channel_id,
-  });
 });
 
 app.patch('/api/admin/keys/:id/revoke', adminAuth, async (req, res) => {
-  await db.execute({
-    sql: 'UPDATE api_keys SET is_active = 0 WHERE id = ?',
-    args: [req.params.id],
-  });
-  res.json({ success: true });
+  try {
+    await db.execute({
+      sql: 'UPDATE api_keys SET is_active = 0 WHERE id = ?',
+      args: [req.params.id],
+    });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.patch('/api/admin/keys/:id/activate', adminAuth, async (req, res) => {
-  await db.execute({
-    sql: 'UPDATE api_keys SET is_active = 1 WHERE id = ?',
-    args: [req.params.id],
-  });
-  res.json({ success: true });
+  try {
+    await db.execute({
+      sql: 'UPDATE api_keys SET is_active = 1 WHERE id = ?',
+      args: [req.params.id],
+    });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete('/api/admin/keys/:id', adminAuth, async (req, res) => {
-  await db.execute({
-    sql: 'DELETE FROM api_keys WHERE id = ?',
-    args: [req.params.id],
-  });
-  res.json({ success: true });
+  try {
+    await db.execute({
+      sql: 'DELETE FROM api_keys WHERE id = ?',
+      args: [req.params.id],
+    });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-// Verify a key (used by docs terminal)
 app.post('/api/admin/keys/verify', adminAuth, async (req, res) => {
-  const { api_key } = req.body;
-  if (!api_key) return res.status(400).json({ error: 'api_key required' });
+  try {
+    const { api_key } = req.body;
+    if (!api_key) return res.status(400).json({ error: 'api_key required' });
 
-  const keyHash = hashKey(api_key);
-  const result = await db.execute({
-    sql: 'SELECT id, name, channel_id, is_active FROM api_keys WHERE key_hash = ?',
-    args: [keyHash],
-  });
+    const keyHash = hashKey(api_key);
+    const result = await db.execute({
+      sql: 'SELECT id, name, channel_id, is_active FROM api_keys WHERE key_hash = ?',
+      args: [keyHash],
+    });
 
-  if (result.rows.length === 0) {
-    return res.json({ valid: false, reason: 'Key not found' });
+    if (result.rows.length === 0) {
+      return res.json({ valid: false, reason: 'Key not found' });
+    }
+
+    const k = result.rows[0];
+    res.json({
+      valid: k.is_active === 1,
+      name: k.name,
+      channel_id: k.channel_id,
+      active: k.is_active === 1,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
-
-  const k = result.rows[0];
-  res.json({
-    valid: k.is_active === 1,
-    name: k.name,
-    channel_id: k.channel_id,
-    active: k.is_active === 1,
-  });
 });
 
-// Dashboard stats
 app.get('/api/admin/stats', adminAuth, async (req, res) => {
-  const [keys, txns, revenue, recent] = await Promise.all([
-    db.execute('SELECT COUNT(*) as c, SUM(is_active) as active FROM api_keys'),
-    db.execute('SELECT COUNT(*) as c FROM transactions'),
-    db.execute("SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE status = 'success'"),
-    db.execute("SELECT COUNT(*) as c FROM transactions WHERE created_at >= datetime('now', '-24 hours')"),
-  ]);
+  try {
+    const [keys, txns, revenue, recent] = await Promise.all([
+      db.execute('SELECT COUNT(*) as c, SUM(is_active) as active FROM api_keys'),
+      db.execute('SELECT COUNT(*) as c FROM transactions'),
+      db.execute("SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE status = 'success'"),
+      db.execute("SELECT COUNT(*) as c FROM transactions WHERE created_at >= datetime('now', '-24 hours')"),
+    ]);
 
-  const successCount = await db.execute("SELECT COUNT(*) as c FROM transactions WHERE status = 'success'");
-  const pendingCount = await db.execute("SELECT COUNT(*) as c FROM transactions WHERE status = 'pending'");
-  const failedCount = await db.execute("SELECT COUNT(*) as c FROM transactions WHERE status = 'failed'");
+    const successCount = await db.execute("SELECT COUNT(*) as c FROM transactions WHERE status = 'success'");
+    const pendingCount = await db.execute("SELECT COUNT(*) as c FROM transactions WHERE status = 'pending'");
+    const failedCount = await db.execute("SELECT COUNT(*) as c FROM transactions WHERE status = 'failed'");
 
-  res.json({
-    total_keys: keys.rows[0].c,
-    active_keys: keys.rows[0].active || 0,
-    total_transactions: txns.rows[0].c,
-    recent_transactions: recent.rows[0].c,
-    total_revenue: revenue.rows[0].total,
-    success_count: successCount.rows[0].c,
-    pending_count: pendingCount.rows[0].c,
-    failed_count: failedCount.rows[0].c,
-  });
-});
-
-// Transactions list with filters
-app.get('/api/admin/transactions', adminAuth, async (req, res) => {
-  const { status, limit = 50, offset = 0 } = req.query;
-
-  let sql = 'SELECT * FROM transactions';
-  const args = [];
-
-  if (status && status !== 'all') {
-    sql += ' WHERE status = ?';
-    args.push(status);
+    res.json({
+      total_keys: keys.rows[0].c,
+      active_keys: keys.rows[0].active || 0,
+      total_transactions: txns.rows[0].c,
+      recent_transactions: recent.rows[0].c,
+      total_revenue: revenue.rows[0].total,
+      success_count: successCount.rows[0].c,
+      pending_count: pendingCount.rows[0].c,
+      failed_count: failedCount.rows[0].c,
+    });
+  } catch (e) {
+    console.error('Stats error:', e);
+    res.status(500).json({ error: e.message });
   }
-
-  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-  args.push(parseInt(limit), parseInt(offset));
-
-  const result = await db.execute({ sql, args });
-  res.json(result.rows);
 });
 
-// Chart data: transactions over last 7 days
+app.get('/api/admin/transactions', adminAuth, async (req, res) => {
+  try {
+    const { status, limit = 50, offset = 0 } = req.query;
+
+    let sql = 'SELECT * FROM transactions';
+    const args = [];
+
+    if (status && status !== 'all') {
+      sql += ' WHERE status = ?';
+      args.push(status);
+    }
+
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    args.push(parseInt(limit), parseInt(offset));
+
+    const result = await db.execute({ sql, args });
+    res.json(result.rows);
+  } catch (e) {
+    console.error('Transactions error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/admin/charts', adminAuth, async (req, res) => {
-  const daily = await db.execute(`
-    SELECT date(created_at) as day,
-           COUNT(*) as count,
-           COALESCE(SUM(CASE WHEN status='success' THEN amount ELSE 0 END), 0) as revenue
-    FROM transactions
-    WHERE created_at >= datetime('now', '-7 days')
-    GROUP BY date(created_at)
-    ORDER BY day ASC
-  `);
+  try {
+    const daily = await db.execute(`
+      SELECT date(created_at) as day,
+             COUNT(*) as count,
+             COALESCE(SUM(CASE WHEN status='success' THEN amount ELSE 0 END), 0) as revenue
+      FROM transactions
+      WHERE created_at >= datetime('now', '-7 days')
+      GROUP BY date(created_at)
+      ORDER BY day ASC
+    `);
 
-  const byStatus = await db.execute(`
-    SELECT status, COUNT(*) as count FROM transactions GROUP BY status
-  `);
+    const byStatus = await db.execute(`
+      SELECT status, COUNT(*) as count FROM transactions GROUP BY status
+    `);
 
-  const byApp = await db.execute(`
-    SELECT app_identifier, COUNT(*) as count,
-           COALESCE(SUM(CASE WHEN status='success' THEN amount ELSE 0 END), 0) as revenue
-    FROM transactions
-    GROUP BY app_identifier
-    ORDER BY count DESC
-    LIMIT 10
-  `);
+    const byApp = await db.execute(`
+      SELECT app_identifier, COUNT(*) as count,
+             COALESCE(SUM(CASE WHEN status='success' THEN amount ELSE 0 END), 0) as revenue
+      FROM transactions
+      GROUP BY app_identifier
+      ORDER BY count DESC
+      LIMIT 10
+    `);
 
-  const recentRequests = await db.execute(`
-    SELECT endpoint, method, COUNT(*) as count
-    FROM request_log
-    WHERE created_at >= datetime('now', '-7 days')
-    GROUP BY endpoint, method
-    ORDER BY count DESC
-    LIMIT 10
-  `);
+    const recentRequests = await db.execute(`
+      SELECT endpoint, method, COUNT(*) as count
+      FROM request_log
+      WHERE created_at >= datetime('now', '-7 days')
+      GROUP BY endpoint, method
+      ORDER BY count DESC
+      LIMIT 10
+    `);
 
-  res.json({
-    daily: daily.rows,
-    byStatus: byStatus.rows,
-    byApp: byApp.rows,
-    recentRequests: recentRequests.rows,
-  });
+    res.json({
+      daily: daily.rows,
+      byStatus: byStatus.rows,
+      byApp: byApp.rows,
+      recentRequests: recentRequests.rows,
+    });
+  } catch (e) {
+    console.error('Charts error:', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ============================================================
@@ -480,27 +523,20 @@ app.post('/api/payhero/callback', async (req, res) => {
 });
 
 // ============================================================
-// HEALTH
+// SPA FALLBACK
 // ============================================================
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Catch-all for SPA routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // ============================================================
-// START
+// START SERVER (non-blocking — fixes 502 on Render)
 // ============================================================
-initDB()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`PayHero Central API on port ${PORT}`);
-    });
-  })
-  .catch((err) => {
-    console.error('DB init failed:', err);
-    process.exit(1);
-  });
+app.listen(PORT, () => {
+  console.log(`PayHero Central API listening on port ${PORT}`);
+
+  // Initialize DB in the background so health checks pass immediately
+  initDB()
+    .then(() => console.log('Database ready'))
+    .catch((err) => console.error('DB init failed:', err.message));
+});
