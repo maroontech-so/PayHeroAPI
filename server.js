@@ -19,14 +19,14 @@ app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
 // ============================================================
-// SECURITY: Helmet with relaxed CSP for inline handlers
+// SECURITY: Helmet with CSP for inline handlers
 // ============================================================
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-      scriptSrcAttr: ["'unsafe-inline'"], // Allows inline onclick handlers
+      scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: [
@@ -48,19 +48,39 @@ app.use(helmet({
 }));
 
 // ============================================================
-// SECURITY: CORS (restrict to your frontend in production)
+// SECURITY: CORS with wildcard subdomain support
 // ============================================================
-const allowedOrigins = process.env.ALLOWED_ORIGINS
+const rawOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : ['https://payheroapi.onrender.com'];
 
+const allowAllOrigins = rawOrigins.includes('*');
+const exactOrigins = new Set();
+const wildcardSuffixes = [];
+
+for (const o of rawOrigins) {
+  if (o === '*') continue;
+  if (o.startsWith('*.')) {
+    wildcardSuffixes.push(o.slice(1).toLowerCase());
+  } else {
+    exactOrigins.add(o.toLowerCase());
+  }
+}
+
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  if (allowAllOrigins) return true;
+  const lower = origin.toLowerCase();
+  if (exactOrigins.has(lower)) return true;
+  for (const suffix of wildcardSuffixes) {
+    if (lower.endsWith(suffix)) return true;
+  }
+  return false;
+}
+
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, same-origin)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    if (process.env.NODE_ENV !== 'production') return callback(null, true);
-    // Silently reject — do NOT throw, or browser gets confusing 500 + no headers
+    if (isOriginAllowed(origin)) return callback(null, true);
     console.warn('CORS blocked origin:', origin);
     return callback(null, false);
   },
@@ -73,7 +93,7 @@ app.use(cors({
 app.options('*', cors());
 
 // ============================================================
-// SECURITY: Body size limits (prevent memory exhaustion DoS)
+// SECURITY: Body size limits
 // ============================================================
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
@@ -173,10 +193,12 @@ function initLocalSchema() {
 initLocalSchema();
 
 // ============================================================
-// TURSO CLOUD
+// TURSO CLOUD (durability layer)
 // ============================================================
 let turso = null;
 let tursoReady = false;
+const tursoWriteQueue = [];
+let tursoFlushing = false;
 
 if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
   try {
@@ -250,28 +272,61 @@ async function initTursoSchema() {
   `);
 }
 
-async function syncToTurso(sql, args = []) {
-  if (!tursoReady) return;
+async function executeWithRetry(sql, args) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await turso.execute({ sql, args });
-      return;
+      return true;
     } catch (e) {
-      if (attempt === 1) {
-        console.error('Turso sync failed after retry:', e.message);
-        return;
-      }
-      // Recreate client on first failure
-      try {
-        turso = createClient({
-          url: process.env.TURSO_DATABASE_URL,
-          authToken: process.env.TURSO_AUTH_TOKEN,
-        });
-      } catch (re) {
-        console.error('Turso client recreation failed:', re.message);
-        return;
+      if (attempt === 0) {
+        try {
+          turso = createClient({
+            url: process.env.TURSO_DATABASE_URL,
+            authToken: process.env.TURSO_AUTH_TOKEN,
+          });
+        } catch (re) {
+          console.error('Turso client recreation failed:', re.message);
+        }
+      } else {
+        console.error('Turso sync failed after retry:', e.message, '| sql:', sql.slice(0, 80));
+        return false;
       }
     }
+  }
+  return false;
+}
+
+function syncToTurso(sql, args = []) {
+  if (!tursoReady) {
+    tursoWriteQueue.push({ sql, args });
+    if (tursoWriteQueue.length > 5000) tursoWriteQueue.shift();
+    return;
+  }
+  // Fire and forget with retry
+  executeWithRetry(sql, args).catch((e) => {
+    console.error('Turso sync error:', e.message);
+  });
+}
+
+async function flushTursoQueue() {
+  if (tursoFlushing || !tursoReady) return;
+  tursoFlushing = true;
+  let flushed = 0;
+  try {
+    while (tursoWriteQueue.length > 0) {
+      const item = tursoWriteQueue.shift();
+      const ok = await executeWithRetry(item.sql, item.args);
+      if (!ok) {
+        tursoWriteQueue.unshift(item);
+        break;
+      }
+      flushed++;
+    }
+    if (flushed > 0) {
+      console.log(`Flushed ${flushed} queued Turso writes`);
+    }
+  } finally {
+    tursoFlushing = false;
   }
 }
 
@@ -321,7 +376,36 @@ async function hydrateFromTurso() {
       if (info.changes) txnCount++;
     }
 
+    // Push any local keys/transactions that aren't yet in Turso
+    const localKeys = local.prepare('SELECT * FROM api_keys').all();
+    for (const k of localKeys) {
+      await executeWithRetry(
+        `INSERT OR IGNORE INTO api_keys
+         (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min, is_active, created_at, last_used_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [k.key_hash, k.key_preview, k.name, k.app_identifier, k.channel_id,
+         k.webhook_url, k.webhook_secret, k.rate_limit_per_min, k.is_active,
+         k.created_at, k.last_used_at, k.expires_at]
+      );
+    }
+
+    const localTxns = local.prepare('SELECT * FROM transactions').all();
+    for (const t of localTxns) {
+      await executeWithRetry(
+        `INSERT OR IGNORE INTO transactions
+         (external_reference, app_identifier, payhero_reference, mpesa_receipt, channel_id,
+          phone_number, amount, status, callback_payload, verified_with_payhero, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [t.external_reference, t.app_identifier, t.payhero_reference, t.mpesa_receipt,
+         t.channel_id, t.phone_number, t.amount, t.status, t.callback_payload,
+         t.verified_with_payhero, t.created_at, t.updated_at]
+      );
+    }
+
     console.log(`Hydrated from Turso: +${keyCount} keys, +${txnCount} transactions`);
+
+    // Flush any writes queued during hydration
+    await flushTursoQueue();
   } catch (e) {
     console.error('Hydration failed:', e.message);
     console.log('Continuing with local-only data');
@@ -329,14 +413,13 @@ async function hydrateFromTurso() {
 }
 
 // ============================================================
-// HELPERS: Secure Key Generation
+// HELPERS
 // ============================================================
 function hashKey(key) {
   return crypto.createHash('sha256').update(key).digest('hex');
 }
 
 function generateApiKey() {
-  // 32 bytes = 256 bits of entropy, hex-encoded for safe transport
   return 'phk_' + crypto.randomBytes(32).toString('hex');
 }
 
@@ -431,13 +514,11 @@ function authenticateApiKey(req, res, next) {
     return res.status(403).json({ error: 'Invalid or inactive API key' });
   }
 
-  // Check key expiry
   if (keyRecord.expires_at && new Date(keyRecord.expires_at) < new Date()) {
     logRequest(keyRecord, req, 403);
     return res.status(403).json({ error: 'API key expired' });
   }
 
-  // Per-key rate limit
   const rate = checkKeyRateLimit(keyRecord);
   res.set('X-RateLimit-Limit', keyRecord.rate_limit_per_min || 100);
   res.set('X-RateLimit-Remaining', rate.remaining);
@@ -462,7 +543,6 @@ function adminAuth(req, res, next) {
     return res.status(500).json({ error: 'Admin password not configured' });
   }
 
-  // Timing-safe comparison
   const provided = Buffer.from(String(adminToken || ''));
   const correct = Buffer.from(String(expected));
 
@@ -479,6 +559,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
     turso: tursoReady ? 'connected' : 'local-only',
+    queue: tursoWriteQueue.length,
     timestamp: new Date().toISOString(),
   });
 });
@@ -486,8 +567,6 @@ app.get('/health', (req, res) => {
 // ============================================================
 // ADMIN ROUTES
 // ============================================================
-
-// Stricter rate limit for login (prevent brute force)
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -526,7 +605,7 @@ app.get('/api/admin/keys', adminAuth, (req, res) => {
   }
 });
 
-app.post('/api/admin/keys', adminAuth, (req, res) => {
+app.post('/api/admin/keys', adminAuth, async (req, res) => {
   try {
     const { name, app_identifier, channel_id, webhook_url, rate_limit_per_min } = req.body;
 
@@ -543,16 +622,31 @@ app.post('/api/admin/keys', adminAuth, (req, res) => {
     const preview = newKey.slice(0, 12) + '...' + newKey.slice(-4);
     const webhookSecret = webhook_url ? generateWebhookSecret() : null;
 
+    // 1. Write locally first
     local.prepare(
       `INSERT INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(keyHash, preview, name, app_identifier || name, channel_id, webhook_url || null, webhookSecret, rate_limit_per_min || 100);
 
-    syncToTurso(
-      `INSERT OR IGNORE INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [keyHash, preview, name, app_identifier || name, channel_id, webhook_url || null, webhookSecret, rate_limit_per_min || 100]
-    );
+    // 2. Persist to Turso SYNCHRONOUSLY so we know it's durable
+    const keyArgs = [keyHash, preview, name, app_identifier || name, channel_id, webhook_url || null, webhookSecret, rate_limit_per_min || 100];
+    const keySql = `INSERT OR IGNORE INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+
+    if (tursoReady) {
+      const ok = await executeWithRetry(keySql, keyArgs);
+      if (!ok) {
+        // Rollback local insert so we don't end up with a phantom key
+        local.prepare('DELETE FROM api_keys WHERE key_hash = ?').run(keyHash);
+        return res.status(503).json({
+          error: 'Could not persist key to backup store. Please try again.',
+        });
+      }
+    } else {
+      // Queue it. It will be flushed once hydration completes.
+      tursoWriteQueue.push({ sql: keySql, args: keyArgs });
+      console.log(`Queued key creation (Turso not ready yet): ${preview}`);
+    }
 
     res.json({
       api_key: newKey,
@@ -711,7 +805,6 @@ app.get('/api/admin/charts', adminAuth, (req, res) => {
 // ============================================================
 // PAYHERO PROXY ROUTES
 // ============================================================
-
 app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
   try {
     const { phone_number, amount, external_reference, callback_url } = req.body;
@@ -725,7 +818,6 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       });
     }
 
-    // Normalize phone: accept 0707..., 254707..., +254707...
     let phone = String(phone_number).replace(/\s+/g, '').replace(/-/g, '');
     if (phone.startsWith('+')) phone = phone.slice(1);
     if (phone.startsWith('0')) phone = '254' + phone.slice(1);
@@ -738,7 +830,8 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       });
     }
 
-    if (typeof amount !== 'number' || amount <= 0 || amount > 500000) {
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0 || numericAmount > 500000) {
       logRequest(req.apiKeyRecord, req, 400);
       return res.status(400).json({ 
         error: 'Amount must be between 1 and 500,000 KES' 
@@ -766,21 +859,21 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       `INSERT INTO transactions 
        (external_reference, app_identifier, channel_id, phone_number, amount, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`
-    ).run(external_reference, req.apiKeyRecord.app_identifier, channelId, phone, amount);
+    ).run(external_reference, req.apiKeyRecord.app_identifier, channelId, phone, numericAmount);
 
     syncToTurso(
       `INSERT OR IGNORE INTO transactions 
        (external_reference, app_identifier, channel_id, phone_number, amount, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`,
-      [external_reference, req.apiKeyRecord.app_identifier, channelId, phone, amount]
+      [external_reference, req.apiKeyRecord.app_identifier, channelId, phone, numericAmount]
     );
 
-    // ===== CALL PAYHERO (CORRECT ENDPOINT + PAYLOAD) =====
+    // ===== CALL PAYHERO =====
     const payheroPayload = {
-      amount: Number(amount),
+      amount: numericAmount,
       phone_number: phone,
       channel_id: channelId,
-      provider: 'm-pesa',              // ← CRITICAL: REQUIRED
+      provider: 'm-pesa',
       external_reference: external_reference,
       callback_url: callback_url || `${req.protocol}://${req.get('host')}/api/payhero/callback`,
     };
@@ -801,7 +894,6 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
 
     // ===== HANDLE PAYHERO ERROR =====
     if (!response.ok) {
-      // Mark transaction as failed so it doesn't stay pending forever
       local.prepare(
         `UPDATE transactions 
          SET status = 'failed', 
@@ -821,7 +913,6 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
 
       logRequest(req.apiKeyRecord, req, response.status);
 
-      // Return a clear error to the client
       return res.status(response.status).json({
         error: 'PayHero API error',
         message: data.error_message || data.message || 'STK Push failed',
@@ -829,7 +920,7 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       });
     }
 
-    // ===== SUCCESS: Store PayHero reference =====
+    // ===== SUCCESS =====
     const payheroRef = 
       data.reference || 
       data.response?.reference || 
@@ -871,7 +962,61 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
 });
 
 // ============================================================
-// PAYHERO CALLBACK — SECURITY CRITICAL
+// STATUS QUERY
+// ============================================================
+app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
+  try {
+    const { reference } = req.params;
+    const channelId = req.apiKeyRecord.channel_id;
+
+    const t = local.prepare(
+      'SELECT * FROM transactions WHERE external_reference = ? OR payhero_reference = ? OR mpesa_receipt = ?'
+    ).get(reference, reference, reference);
+
+    if (t && t.status !== 'pending' && t.verified_with_payhero) {
+      logRequest(req.apiKeyRecord, req, 200);
+      return res.json({ source: 'local', transaction: t });
+    }
+
+    const response = await fetch(
+      `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(reference)}&channel_id=${channelId}`,
+      { headers: { Authorization: getPayHeroAuthHeader() } }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      logRequest(req.apiKeyRecord, req, response.status);
+      return res.status(response.status).json({
+        error: 'PayHero API error',
+        details: data,
+      });
+    }
+
+    if (t) {
+      const normalized = normalizeStatus(data.status || data.Status || data.response?.Status);
+      if (normalized !== 'unknown') {
+        local.prepare(
+          `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = datetime('now') WHERE id = ?`
+        ).run(normalized, t.id);
+        syncToTurso(
+          `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = CURRENT_TIMESTAMP WHERE external_reference = ?`,
+          [normalized, t.external_reference]
+        );
+      }
+    }
+
+    logRequest(req.apiKeyRecord, req, 200);
+    res.json({ source: 'payhero', transaction: data });
+  } catch (error) {
+    console.error('Status query error:', error);
+    logRequest(req.apiKeyRecord, req, 500);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================================
+// PAYHERO CALLBACK
 // ============================================================
 app.post('/api/payhero/callback', async (req, res) => {
   const sourceIp = req.ip;
@@ -880,7 +1025,6 @@ app.post('/api/payhero/callback', async (req, res) => {
   try {
     console.log('PayHero Callback received:', JSON.stringify(payload, null, 2));
 
-    // Log ALL callbacks for audit
     const externalRef = payload.external_reference || payload.reference || payload.response?.User_Reference;
     const mpesaRef = payload.mpesa_receipt || payload.response?.MPESA_Reference;
 
@@ -899,7 +1043,6 @@ app.post('/api/payhero/callback', async (req, res) => {
       return res.status(200).json({ status: 'received_no_reference' });
     }
 
-    // Find the transaction
     let txn = null;
     if (externalRef) {
       txn = local.prepare('SELECT * FROM transactions WHERE external_reference = ?').get(externalRef);
@@ -913,7 +1056,6 @@ app.post('/api/payhero/callback', async (req, res) => {
       return res.status(200).json({ status: 'received_unknown_transaction' });
     }
 
-    // SECURITY: Re-query PayHero to verify the actual status
     let verifiedStatus = null;
     let verifiedWithPayhero = false;
 
@@ -933,7 +1075,6 @@ app.post('/api/payhero/callback', async (req, res) => {
       console.error('PayHero verification failed:', e.message);
     }
 
-    // If we couldn't verify with PayHero, only trust the callback if it's NOT claiming success
     const callbackStatus = normalizeStatus(
       payload.status || payload.Status || payload.transaction_status || payload.response?.Status
     );
@@ -948,13 +1089,11 @@ app.post('/api/payhero/callback', async (req, res) => {
       finalStatus = callbackStatus;
     }
 
-    // Don't downgrade from success
     if (txn.status === 'success' && finalStatus !== 'success') {
       console.log(`Ignoring downgrade attempt for ${txn.external_reference}`);
       return res.status(200).json({ status: 'received_ignored_downgrade' });
     }
 
-    // Update transaction
     local.prepare(
       `UPDATE transactions
        SET status = ?, payhero_reference = COALESCE(?, payhero_reference),
@@ -972,12 +1111,10 @@ app.post('/api/payhero/callback', async (req, res) => {
       [finalStatus, mpesaRef, mpesaRef, JSON.stringify(payload), verifiedWithPayhero ? 1 : 0, txn.external_reference]
     );
 
-    // Mark callback as verified in log
     local.prepare(
       `UPDATE callback_log SET verified = ? WHERE external_reference = ? ORDER BY id DESC LIMIT 1`
     ).run(verifiedWithPayhero ? 1 : 0, txn.external_reference);
 
-    // Forward to app webhook (if configured)
     const apiKey = local.prepare('SELECT * FROM api_keys WHERE app_identifier = ?').get(txn.app_identifier);
 
     if (apiKey && apiKey.webhook_url) {
@@ -1021,7 +1158,7 @@ app.get('*', (req, res) => {
 });
 
 // ============================================================
-// GLOBAL ERROR HANDLER (no stack traces leaked)
+// GLOBAL ERROR HANDLER
 // ============================================================
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err.message);
@@ -1034,7 +1171,7 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================================
-// START (non-blocking for Render health checks)
+// START
 // ============================================================
 app.listen(PORT, () => {
   console.log(`PayHero Central API listening on port ${PORT}`);
@@ -1045,33 +1182,38 @@ app.listen(PORT, () => {
 });
 
 // ============================================================
-// PERIODIC FLUSH to Turso (safety net)
+// PERIODIC FLUSH TO TURSO
 // ============================================================
 setInterval(async () => {
   if (!turso || !tursoReady) return;
+
+  // Drain the queue first
+  await flushTursoQueue();
+
+  // Then do the full-table sync as a safety net
   try {
     const keys = local.prepare('SELECT * FROM api_keys').all();
     for (const k of keys) {
-      await turso.execute({
-        sql: `INSERT OR REPLACE INTO api_keys
-              (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min, is_active, created_at, last_used_at, expires_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [k.key_hash, k.key_preview, k.name, k.app_identifier, k.channel_id,
-               k.webhook_url, k.webhook_secret, k.rate_limit_per_min, k.is_active,
-               k.created_at, k.last_used_at, k.expires_at],
-      });
+      await executeWithRetry(
+        `INSERT OR REPLACE INTO api_keys
+         (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min, is_active, created_at, last_used_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [k.key_hash, k.key_preview, k.name, k.app_identifier, k.channel_id,
+         k.webhook_url, k.webhook_secret, k.rate_limit_per_min, k.is_active,
+         k.created_at, k.last_used_at, k.expires_at]
+      );
     }
     const txns = local.prepare('SELECT * FROM transactions').all();
     for (const t of txns) {
-      await turso.execute({
-        sql: `INSERT OR REPLACE INTO transactions
-              (external_reference, app_identifier, payhero_reference, mpesa_receipt, channel_id,
-               phone_number, amount, status, callback_payload, verified_with_payhero, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [t.external_reference, t.app_identifier, t.payhero_reference, t.mpesa_receipt,
-               t.channel_id, t.phone_number, t.amount, t.status, t.callback_payload,
-               t.verified_with_payhero, t.created_at, t.updated_at],
-      });
+      await executeWithRetry(
+        `INSERT OR REPLACE INTO transactions
+         (external_reference, app_identifier, payhero_reference, mpesa_receipt, channel_id,
+          phone_number, amount, status, callback_payload, verified_with_payhero, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [t.external_reference, t.app_identifier, t.payhero_reference, t.mpesa_receipt,
+         t.channel_id, t.phone_number, t.amount, t.status, t.callback_payload,
+         t.verified_with_payhero, t.created_at, t.updated_at]
+      );
     }
   } catch (e) {
     console.error('Periodic flush error:', e.message);
