@@ -90,7 +90,13 @@ app.use(cors({
   maxAge: 86400,
 }));
 
-app.options('*', cors());
+// Express 5-safe preflight handler (no '*path' string)
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    return cors()(req, res, next);
+  }
+  next();
+});
 
 // ============================================================
 // SECURITY: Body size limits
@@ -116,6 +122,32 @@ class AppError extends Error {
 }
 
 // ============================================================
+// SMALL UTILITIES
+// ============================================================
+function withTimeout(promise, ms, label = 'operation') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
+function safeJsonParse(str, fallback = null) {
+  try { return JSON.parse(str); } catch { return fallback; }
+}
+
+// ============================================================
+// VALIDATE REQUIRED ENV
+// ============================================================
+const REQUIRED_ENV = ['ADMIN_PASSWORD', 'PAYHERO_API_USERNAME', 'PAYHERO_API_PASSWORD'];
+const missingEnv = REQUIRED_ENV.filter(k => !process.env[k]);
+if (missingEnv.length) {
+  console.error(`FATAL: Missing required environment variables: ${missingEnv.join(', ')}`);
+  // Don't exit — let Render show the error in /health, but log loudly.
+}
+
+// ============================================================
 // LOCAL SQLITE BUFFER
 // ============================================================
 const DB_DIR = path.join(__dirname, 'data');
@@ -126,6 +158,7 @@ const local = new Database(LOCAL_DB_PATH);
 local.pragma('journal_mode = WAL');
 local.pragma('synchronous = NORMAL');
 local.pragma('foreign_keys = ON');
+local.pragma('busy_timeout = 5000');
 
 function initLocalSchema() {
   local.exec(`
@@ -186,6 +219,7 @@ function initLocalSchema() {
     CREATE INDEX IF NOT EXISTS idx_txn_status ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_log_created ON request_log(created_at);
     CREATE INDEX IF NOT EXISTS idx_callback_ext_ref ON callback_log(external_reference);
+    CREATE INDEX IF NOT EXISTS idx_callback_verified ON callback_log(verified);
   `);
   console.log('Local DB schema ready');
 }
@@ -199,13 +233,18 @@ let turso = null;
 let tursoReady = false;
 const tursoWriteQueue = [];
 let tursoFlushing = false;
+const MAX_QUEUE = 5000;
+
+function makeTursoClient() {
+  return createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN,
+  });
+}
 
 if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
   try {
-    turso = createClient({
-      url: process.env.TURSO_DATABASE_URL,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    });
+    turso = makeTursoClient();
   } catch (e) {
     console.error('Turso client init failed:', e.message);
   }
@@ -272,23 +311,28 @@ async function initTursoSchema() {
   `);
 }
 
-async function executeWithRetry(sql, args) {
+async function executeWithRetry(sql, args, label = 'turso') {
+  if (!turso) return false;
+
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      await turso.execute({ sql, args });
+      await withTimeout(
+        turso.execute({ sql, args: args || [] }),
+        10000,
+        `${label} execute`
+      );
       return true;
     } catch (e) {
+      console.error(`Turso ${label} attempt ${attempt + 1} failed:`, e.message);
       if (attempt === 0) {
+        // Recreate client on first failure
         try {
-          turso = createClient({
-            url: process.env.TURSO_DATABASE_URL,
-            authToken: process.env.TURSO_AUTH_TOKEN,
-          });
+          turso = makeTursoClient();
         } catch (re) {
           console.error('Turso client recreation failed:', re.message);
+          return false;
         }
       } else {
-        console.error('Turso sync failed after retry:', e.message, '| sql:', sql.slice(0, 80));
         return false;
       }
     }
@@ -297,29 +341,27 @@ async function executeWithRetry(sql, args) {
 }
 
 function syncToTurso(sql, args = []) {
+  if (!turso) return;
   if (!tursoReady) {
     tursoWriteQueue.push({ sql, args });
-    if (tursoWriteQueue.length > 5000) tursoWriteQueue.shift();
+    if (tursoWriteQueue.length > MAX_QUEUE) tursoWriteQueue.shift();
     return;
   }
-  // Fire and forget with retry
   executeWithRetry(sql, args).catch((e) => {
     console.error('Turso sync error:', e.message);
   });
 }
 
 async function flushTursoQueue() {
-  if (tursoFlushing || !tursoReady) return;
+  if (tursoFlushing || !tursoReady || !turso) return;
   tursoFlushing = true;
   let flushed = 0;
   try {
     while (tursoWriteQueue.length > 0) {
-      const item = tursoWriteQueue.shift();
+      const item = tursoWriteQueue[0];
       const ok = await executeWithRetry(item.sql, item.args);
-      if (!ok) {
-        tursoWriteQueue.unshift(item);
-        break;
-      }
+      if (!ok) break;
+      tursoWriteQueue.shift();
       flushed++;
     }
     if (flushed > 0) {
@@ -342,24 +384,27 @@ async function hydrateFromTurso() {
     console.log('Turso schema ready');
 
     // Pull API keys
-    const remoteKeys = await turso.execute('SELECT * FROM api_keys');
+    const remoteKeys = await withTimeout(turso.execute('SELECT * FROM api_keys'), 20000, 'turso pull keys');
     const insertKey = local.prepare(`
       INSERT OR IGNORE INTO api_keys
       (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min, is_active, created_at, last_used_at, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     let keyCount = 0;
-    for (const k of remoteKeys.rows) {
-      const info = insertKey.run(
-        k.key_hash, k.key_preview, k.name, k.app_identifier,
-        k.channel_id, k.webhook_url || null, k.webhook_secret || null,
-        k.rate_limit_per_min || 100, k.is_active, k.created_at, k.last_used_at, k.expires_at || null
-      );
-      if (info.changes) keyCount++;
-    }
+    const insertKeysTx = local.transaction((rows) => {
+      for (const k of rows) {
+        const info = insertKey.run(
+          k.key_hash, k.key_preview, k.name, k.app_identifier,
+          k.channel_id, k.webhook_url || null, k.webhook_secret || null,
+          k.rate_limit_per_min || 100, k.is_active, k.created_at, k.last_used_at, k.expires_at || null
+        );
+        if (info.changes) keyCount++;
+      }
+    });
+    insertKeysTx(remoteKeys.rows);
 
     // Pull transactions
-    const remoteTxns = await turso.execute('SELECT * FROM transactions');
+    const remoteTxns = await withTimeout(turso.execute('SELECT * FROM transactions'), 20000, 'turso pull txns');
     const insertTxn = local.prepare(`
       INSERT OR IGNORE INTO transactions
       (external_reference, app_identifier, payhero_reference, mpesa_receipt, channel_id,
@@ -367,14 +412,17 @@ async function hydrateFromTurso() {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     let txnCount = 0;
-    for (const t of remoteTxns.rows) {
-      const info = insertTxn.run(
-        t.external_reference, t.app_identifier, t.payhero_reference,
-        t.mpesa_receipt || null, t.channel_id, t.phone_number, t.amount, t.status,
-        t.callback_payload, t.verified_with_payhero || 0, t.created_at, t.updated_at
-      );
-      if (info.changes) txnCount++;
-    }
+    const insertTxnsTx = local.transaction((rows) => {
+      for (const t of rows) {
+        const info = insertTxn.run(
+          t.external_reference, t.app_identifier, t.payhero_reference,
+          t.mpesa_receipt || null, t.channel_id, t.phone_number, t.amount, t.status,
+          t.callback_payload, t.verified_with_payhero || 0, t.created_at, t.updated_at
+        );
+        if (info.changes) txnCount++;
+      }
+    });
+    insertTxnsTx(remoteTxns.rows);
 
     // Push any local keys/transactions that aren't yet in Turso
     const localKeys = local.prepare('SELECT * FROM api_keys').all();
@@ -409,7 +457,22 @@ async function hydrateFromTurso() {
   } catch (e) {
     console.error('Hydration failed:', e.message);
     console.log('Continuing with local-only data');
+    tursoReady = true; // still allow queue to drain
   }
+}
+
+// ============================================================
+// READY GATE — block API routes until hydration done
+// ============================================================
+let appReady = false;
+
+function requireReady(req, res, next) {
+  if (appReady) return next();
+  res.set('Retry-After', '5');
+  return res.status(503).json({
+    error: 'Service warming up',
+    message: 'Server is initializing. Please retry in a few seconds.',
+  });
 }
 
 // ============================================================
@@ -428,20 +491,24 @@ function generateWebhookSecret() {
 }
 
 function getPayHeroAuthHeader() {
-  const credentials = Buffer.from(
-    `${process.env.PAYHERO_API_USERNAME}:${process.env.PAYHERO_API_PASSWORD}`
-  ).toString('base64');
+  const u = process.env.PAYHERO_API_USERNAME;
+  const p = process.env.PAYHERO_API_PASSWORD;
+  if (!u || !p) {
+    throw new AppError('PayHero credentials not configured', 500, false);
+  }
+  const credentials = Buffer.from(`${u}:${p}`).toString('base64');
   return `Basic ${credentials}`;
 }
 
 function signWebhookPayload(secret, payload) {
+  if (!secret) return null;
   return crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
 }
 
 function normalizeStatus(raw) {
-  const v = String(raw || '').toLowerCase();
-  if (v.includes('success') || v === '1' || v === 'paid' || v === 'completed') return 'success';
-  if (v.includes('fail') || v.includes('cancel') || v === '0') return 'failed';
+  const v = String(raw || '').toLowerCase().trim();
+  if (['success', 'successful', 'complete', 'completed', 'paid', '1'].includes(v)) return 'success';
+  if (v.includes('fail') || v.includes('cancel') || v === '0' || v === 'rejected') return 'failed';
   if (v.includes('pending') || v.includes('process') || v === '2') return 'pending';
   return 'unknown';
 }
@@ -494,6 +561,14 @@ function checkKeyRateLimit(keyRecord) {
   };
 }
 
+// Periodic cleanup of stale rate-limit entries (prevents memory leak)
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, entry] of keyRateLimits.entries()) {
+    if (now > entry.resetAt + 300000) keyRateLimits.delete(id);
+  }
+}, 60000);
+
 // ============================================================
 // AUTH MIDDLEWARE
 // ============================================================
@@ -520,16 +595,20 @@ function authenticateApiKey(req, res, next) {
   }
 
   const rate = checkKeyRateLimit(keyRecord);
-  res.set('X-RateLimit-Limit', keyRecord.rate_limit_per_min || 100);
-  res.set('X-RateLimit-Remaining', rate.remaining);
+  res.set('X-RateLimit-Limit', String(keyRecord.rate_limit_per_min || 100));
+  res.set('X-RateLimit-Remaining', String(rate.remaining));
 
   if (!rate.allowed) {
     logRequest(keyRecord, req, 429);
     return res.status(429).json({ error: 'Rate limit exceeded for this API key' });
   }
 
-  local.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").run(keyRecord.id);
-  syncToTurso("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?", [keyRecord.id]);
+  try {
+    local.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").run(keyRecord.id);
+    syncToTurso("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?", [keyRecord.id]);
+  } catch (e) {
+    console.error('last_used_at update failed:', e.message);
+  }
 
   req.apiKeyRecord = keyRecord;
   next();
@@ -553,11 +632,11 @@ function adminAuth(req, res, next) {
 }
 
 // ============================================================
-// HEALTH CHECK
+// HEALTH CHECK (always available, even before ready)
 // ============================================================
 app.get('/health', (req, res) => {
   res.status(200).json({
-    status: 'ok',
+    status: appReady ? 'ok' : 'warming_up',
     turso: tursoReady ? 'connected' : 'local-only',
     queue: tursoWriteQueue.length,
     timestamp: new Date().toISOString(),
@@ -576,7 +655,7 @@ const loginLimiter = rateLimit({
 });
 
 app.post('/api/admin/login', loginLimiter, (req, res) => {
-  const { password } = req.body;
+  const { password } = req.body || {};
 
   if (!process.env.ADMIN_PASSWORD) {
     return res.status(500).json({ error: 'Admin password not configured' });
@@ -591,11 +670,11 @@ app.post('/api/admin/login', loginLimiter, (req, res) => {
   res.status(403).json({ error: 'Invalid password' });
 });
 
-app.get('/api/admin/keys', adminAuth, (req, res) => {
+app.get('/api/admin/keys', requireReady, adminAuth, (req, res) => {
   try {
     const rows = local.prepare(
-      `SELECT id, key_preview, name, app_identifier, channel_id, webhook_url, 
-              rate_limit_per_min, is_active, created_at, last_used_at, expires_at 
+      `SELECT id, key_preview, name, app_identifier, channel_id, webhook_url,
+              rate_limit_per_min, is_active, created_at, last_used_at, expires_at
        FROM api_keys ORDER BY created_at DESC`
     ).all();
     res.json(rows);
@@ -605,9 +684,9 @@ app.get('/api/admin/keys', adminAuth, (req, res) => {
   }
 });
 
-app.post('/api/admin/keys', adminAuth, async (req, res) => {
+app.post('/api/admin/keys', requireReady, adminAuth, async (req, res, next) => {
   try {
-    const { name, app_identifier, channel_id, webhook_url, rate_limit_per_min } = req.body;
+    const { name, app_identifier, channel_id, webhook_url, rate_limit_per_min } = req.body || {};
 
     if (!name || !channel_id) {
       return res.status(400).json({ error: 'Name and Channel ID are required' });
@@ -617,35 +696,46 @@ app.post('/api/admin/keys', adminAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid channel_id format' });
     }
 
+    if (webhook_url && !/^https?:\/\//i.test(webhook_url)) {
+      return res.status(400).json({ error: 'webhook_url must start with http:// or https://' });
+    }
+
+    let rl = parseInt(rate_limit_per_min, 10);
+    if (!Number.isFinite(rl) || rl < 1 || rl > 10000) rl = 100;
+
     const newKey = generateApiKey();
     const keyHash = hashKey(newKey);
     const preview = newKey.slice(0, 12) + '...' + newKey.slice(-4);
     const webhookSecret = webhook_url ? generateWebhookSecret() : null;
 
-    // 1. Write locally first
-    local.prepare(
-      `INSERT INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(keyHash, preview, name, app_identifier || name, channel_id, webhook_url || null, webhookSecret, rate_limit_per_min || 100);
+    // 1. Write locally first — this is our source of truth
+    try {
+      local.prepare(
+        `INSERT INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(keyHash, preview, name, app_identifier || name, channel_id, webhook_url || null, webhookSecret, rl);
+    } catch (e) {
+      if (String(e.message).includes('UNIQUE')) {
+        return res.status(409).json({ error: 'Key collision — please retry' });
+      }
+      throw e;
+    }
 
-    // 2. Persist to Turso SYNCHRONOUSLY so we know it's durable
-    const keyArgs = [keyHash, preview, name, app_identifier || name, channel_id, webhook_url || null, webhookSecret, rate_limit_per_min || 100];
+    // 2. Queue Turso persistence (non-blocking — local write already succeeded)
+    const keyArgs = [keyHash, preview, name, app_identifier || name, channel_id, webhook_url || null, webhookSecret, rl];
     const keySql = `INSERT OR IGNORE INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
-    if (tursoReady) {
-      const ok = await executeWithRetry(keySql, keyArgs);
+    if (tursoReady && turso) {
+      // Try synchronously but with timeout; if it fails, fall back to queue
+      const ok = await executeWithRetry(keySql, keyArgs, 'create key');
       if (!ok) {
-        // Rollback local insert so we don't end up with a phantom key
-        local.prepare('DELETE FROM api_keys WHERE key_hash = ?').run(keyHash);
-        return res.status(503).json({
-          error: 'Could not persist key to backup store. Please try again.',
-        });
+        console.warn('Turso persist failed; queueing key for retry:', preview);
+        tursoWriteQueue.push({ sql: keySql, args: keyArgs });
       }
     } else {
-      // Queue it. It will be flushed once hydration completes.
       tursoWriteQueue.push({ sql: keySql, args: keyArgs });
-      console.log(`Queued key creation (Turso not ready yet): ${preview}`);
+      console.log(`Queued key creation (Turso not ready): ${preview}`);
     }
 
     res.json({
@@ -657,34 +747,40 @@ app.post('/api/admin/keys', adminAuth, async (req, res) => {
     });
   } catch (e) {
     console.error('Create key error:', e);
-    res.status(500).json({ error: 'Failed to create key' });
+    next(e);
   }
 });
 
-app.patch('/api/admin/keys/:id/revoke', adminAuth, (req, res) => {
+app.patch('/api/admin/keys/:id/revoke', requireReady, adminAuth, (req, res) => {
   try {
-    local.prepare('UPDATE api_keys SET is_active = 0 WHERE id = ?').run(req.params.id);
-    syncToTurso('UPDATE api_keys SET is_active = 0 WHERE id = ?', [req.params.id]);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+    local.prepare('UPDATE api_keys SET is_active = 0 WHERE id = ?').run(id);
+    syncToTurso('UPDATE api_keys SET is_active = 0 WHERE id = ?', [id]);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to revoke key' });
   }
 });
 
-app.patch('/api/admin/keys/:id/activate', adminAuth, (req, res) => {
+app.patch('/api/admin/keys/:id/activate', requireReady, adminAuth, (req, res) => {
   try {
-    local.prepare('UPDATE api_keys SET is_active = 1 WHERE id = ?').run(req.params.id);
-    syncToTurso('UPDATE api_keys SET is_active = 1 WHERE id = ?', [req.params.id]);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+    local.prepare('UPDATE api_keys SET is_active = 1 WHERE id = ?').run(id);
+    syncToTurso('UPDATE api_keys SET is_active = 1 WHERE id = ?', [id]);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to activate key' });
   }
 });
 
-app.delete('/api/admin/keys/:id', adminAuth, (req, res) => {
+app.delete('/api/admin/keys/:id', requireReady, adminAuth, (req, res) => {
   try {
-    const row = local.prepare('SELECT key_hash FROM api_keys WHERE id = ?').get(req.params.id);
-    local.prepare('DELETE FROM api_keys WHERE id = ?').run(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid id' });
+    const row = local.prepare('SELECT key_hash FROM api_keys WHERE id = ?').get(id);
+    local.prepare('DELETE FROM api_keys WHERE id = ?').run(id);
     if (row) {
       syncToTurso('DELETE FROM api_keys WHERE key_hash = ?', [row.key_hash]);
     }
@@ -694,9 +790,9 @@ app.delete('/api/admin/keys/:id', adminAuth, (req, res) => {
   }
 });
 
-app.post('/api/admin/keys/verify', adminAuth, (req, res) => {
+app.post('/api/admin/keys/verify', requireReady, adminAuth, (req, res) => {
   try {
-    const { api_key } = req.body;
+    const { api_key } = req.body || {};
     if (!api_key) return res.status(400).json({ error: 'api_key required' });
 
     const keyHash = hashKey(api_key);
@@ -723,9 +819,9 @@ app.post('/api/admin/keys/verify', adminAuth, (req, res) => {
   }
 });
 
-app.get('/api/admin/stats', adminAuth, (req, res) => {
+app.get('/api/admin/stats', requireReady, adminAuth, (req, res) => {
   try {
-    const keys = local.prepare('SELECT COUNT(*) as c, SUM(is_active) as active FROM api_keys').get();
+    const keys = local.prepare('SELECT COUNT(*) as c, COALESCE(SUM(is_active),0) as active FROM api_keys').get();
     const txns = local.prepare('SELECT COUNT(*) as c FROM transactions').get();
     const revenue = local.prepare("SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE status = 'success'").get();
     const recent = local.prepare("SELECT COUNT(*) as c FROM transactions WHERE created_at >= datetime('now', '-24 hours')").get();
@@ -751,7 +847,7 @@ app.get('/api/admin/stats', adminAuth, (req, res) => {
   }
 });
 
-app.get('/api/admin/transactions', adminAuth, (req, res) => {
+app.get('/api/admin/transactions', requireReady, adminAuth, (req, res) => {
   try {
     const { status, limit = 50, offset = 0 } = req.query;
     let sql = 'SELECT * FROM transactions';
@@ -763,7 +859,9 @@ app.get('/api/admin/transactions', adminAuth, (req, res) => {
     }
 
     sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    args.push(Math.min(parseInt(limit) || 50, 500), parseInt(offset) || 0);
+    const lim = Math.min(parseInt(limit, 10) || 50, 500);
+    const off = Math.max(parseInt(offset, 10) || 0, 0);
+    args.push(lim, off);
 
     const rows = local.prepare(sql).all(...args);
     res.json(rows);
@@ -773,7 +871,7 @@ app.get('/api/admin/transactions', adminAuth, (req, res) => {
   }
 });
 
-app.get('/api/admin/charts', adminAuth, (req, res) => {
+app.get('/api/admin/charts', requireReady, adminAuth, (req, res) => {
   try {
     const daily = local.prepare(`
       SELECT date(created_at) as day, COUNT(*) as count,
@@ -805,17 +903,22 @@ app.get('/api/admin/charts', adminAuth, (req, res) => {
 // ============================================================
 // PAYHERO PROXY ROUTES
 // ============================================================
-app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
+app.post('/api/pay/stk-push', requireReady, authenticateApiKey, async (req, res) => {
   try {
-    const { phone_number, amount, external_reference, callback_url } = req.body;
+    const { phone_number, amount, external_reference, callback_url } = req.body || {};
     const channelId = req.apiKeyRecord.channel_id;
 
     // ===== VALIDATION =====
     if (!phone_number || !amount || !external_reference) {
       logRequest(req.apiKeyRecord, req, 400);
-      return res.status(400).json({ 
-        error: 'phone_number, amount, and external_reference are required' 
+      return res.status(400).json({
+        error: 'phone_number, amount, and external_reference are required'
       });
+    }
+
+    if (typeof external_reference !== 'string' || external_reference.length > 100) {
+      logRequest(req.apiKeyRecord, req, 400);
+      return res.status(400).json({ error: 'external_reference must be a string ≤ 100 chars' });
     }
 
     let phone = String(phone_number).replace(/\s+/g, '').replace(/-/g, '');
@@ -825,16 +928,16 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
 
     if (!/^254[17]\d{8}$/.test(phone)) {
       logRequest(req.apiKeyRecord, req, 400);
-      return res.status(400).json({ 
-        error: 'Invalid phone number. Use format 254708765597 or 0708765597' 
+      return res.status(400).json({
+        error: 'Invalid phone number. Use format 254708765597 or 0708765597'
       });
     }
 
     const numericAmount = Number(amount);
     if (!Number.isFinite(numericAmount) || numericAmount <= 0 || numericAmount > 500000) {
       logRequest(req.apiKeyRecord, req, 400);
-      return res.status(400).json({ 
-        error: 'Amount must be between 1 and 500,000 KES' 
+      return res.status(400).json({
+        error: 'Amount must be between 1 and 500,000 KES'
       });
     }
 
@@ -854,21 +957,30 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       });
     }
 
-    // ===== INSERT PENDING =====
-    local.prepare(
-      `INSERT INTO transactions 
-       (external_reference, app_identifier, channel_id, phone_number, amount, status)
-       VALUES (?, ?, ?, ?, ?, 'pending')`
-    ).run(external_reference, req.apiKeyRecord.app_identifier, channelId, phone, numericAmount);
+    // ===== INSERT PENDING (atomic, handles race) =====
+    try {
+      local.prepare(
+        `INSERT INTO transactions
+         (external_reference, app_identifier, channel_id, phone_number, amount, status)
+         VALUES (?, ?, ?, ?, ?, 'pending')`
+      ).run(external_reference, req.apiKeyRecord.app_identifier, channelId, phone, numericAmount);
+    } catch (e) {
+      if (String(e.message).includes('UNIQUE')) {
+        const row = local.prepare('SELECT * FROM transactions WHERE external_reference = ?').get(external_reference);
+        logRequest(req.apiKeyRecord, req, 200);
+        return res.json({ success: true, external_reference, idempotent: true, transaction: row });
+      }
+      throw e;
+    }
 
     syncToTurso(
-      `INSERT OR IGNORE INTO transactions 
+      `INSERT OR IGNORE INTO transactions
        (external_reference, app_identifier, channel_id, phone_number, amount, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`,
       [external_reference, req.apiKeyRecord.app_identifier, channelId, phone, numericAmount]
     );
 
-    // ===== CALL PAYHERO =====
+    // ===== CALL PAYHERO (with timeout) =====
     const payheroPayload = {
       amount: numericAmount,
       phone_number: phone,
@@ -878,33 +990,55 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       callback_url: callback_url || `${req.protocol}://${req.get('host')}/api/payhero/callback`,
     };
 
-    const response = await fetch(
-      'https://backend.payhero.co.ke/api/v2/payments/initiate-stk-push',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: getPayHeroAuthHeader(),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payheroPayload),
-      }
-    );
-
-    const data = await response.json();
+    let response, data;
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 25000);
+      response = await fetch(
+        'https://backend.payhero.co.ke/api/v2/payments/initiate-stk-push',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: getPayHeroAuthHeader(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payheroPayload),
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(t);
+      data = await response.json().catch(() => ({}));
+    } catch (e) {
+      console.error('PayHero fetch failed:', e.message);
+      local.prepare(
+        `UPDATE transactions SET status = 'failed', callback_payload = ?, updated_at = datetime('now')
+         WHERE external_reference = ?`
+      ).run(JSON.stringify({ error: e.message }), external_reference);
+      syncToTurso(
+        `UPDATE transactions SET status = 'failed', callback_payload = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE external_reference = ?`,
+        [JSON.stringify({ error: e.message }), external_reference]
+      );
+      logRequest(req.apiKeyRecord, req, 502);
+      return res.status(502).json({
+        error: 'PayHero unreachable',
+        message: e.message,
+      });
+    }
 
     // ===== HANDLE PAYHERO ERROR =====
     if (!response.ok) {
       local.prepare(
-        `UPDATE transactions 
-         SET status = 'failed', 
+        `UPDATE transactions
+         SET status = 'failed',
              callback_payload = ?,
              updated_at = datetime('now')
          WHERE external_reference = ?`
       ).run(JSON.stringify(data), external_reference);
 
       syncToTurso(
-        `UPDATE transactions 
-         SET status = 'failed', 
+        `UPDATE transactions
+         SET status = 'failed',
              callback_payload = ?,
              updated_at = CURRENT_TIMESTAMP
          WHERE external_reference = ?`,
@@ -921,22 +1055,22 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
     }
 
     // ===== SUCCESS =====
-    const payheroRef = 
-      data.reference || 
-      data.response?.reference || 
+    const payheroRef =
+      data.reference ||
+      data.response?.reference ||
       data.response?.Transaction_Reference ||
       data.checkout_request_id ||
       '';
 
     if (payheroRef) {
       local.prepare(
-        `UPDATE transactions 
+        `UPDATE transactions
          SET payhero_reference = ?, updated_at = datetime('now')
          WHERE external_reference = ?`
       ).run(payheroRef, external_reference);
 
       syncToTurso(
-        `UPDATE transactions 
+        `UPDATE transactions
          SET payhero_reference = ?, updated_at = CURRENT_TIMESTAMP
          WHERE external_reference = ?`,
         [payheroRef, external_reference]
@@ -953,10 +1087,10 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
 
   } catch (error) {
     console.error('STK Push error:', error);
-    logRequest(req.apiKeyRecord, req, 500);
-    res.status(500).json({ 
+    if (req.apiKeyRecord) logRequest(req.apiKeyRecord, req, 500);
+    res.status(500).json({
       error: 'Internal server error',
-      message: error.message 
+      message: error.message
     });
   }
 });
@@ -964,7 +1098,7 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
 // ============================================================
 // STATUS QUERY
 // ============================================================
-app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
+app.get('/api/pay/status/:reference', requireReady, authenticateApiKey, async (req, res) => {
   try {
     const { reference } = req.params;
     const channelId = req.apiKeyRecord.channel_id;
@@ -978,12 +1112,21 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
       return res.json({ source: 'local', transaction: t });
     }
 
-    const response = await fetch(
-      `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(reference)}&channel_id=${channelId}`,
-      { headers: { Authorization: getPayHeroAuthHeader() } }
-    );
-
-    const data = await response.json();
+    let response, data;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      response = await fetch(
+        `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(reference)}&channel_id=${encodeURIComponent(channelId)}`,
+        { headers: { Authorization: getPayHeroAuthHeader() }, signal: controller.signal }
+      );
+      clearTimeout(timer);
+      data = await response.json().catch(() => ({}));
+    } catch (e) {
+      console.error('Status fetch failed:', e.message);
+      logRequest(req.apiKeyRecord, req, 502);
+      return res.status(502).json({ error: 'PayHero unreachable', message: e.message });
+    }
 
     if (!response.ok) {
       logRequest(req.apiKeyRecord, req, response.status);
@@ -1010,7 +1153,7 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
     res.json({ source: 'payhero', transaction: data });
   } catch (error) {
     console.error('Status query error:', error);
-    logRequest(req.apiKeyRecord, req, 500);
+    if (req.apiKeyRecord) logRequest(req.apiKeyRecord, req, 500);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1020,7 +1163,7 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
 // ============================================================
 app.post('/api/payhero/callback', async (req, res) => {
   const sourceIp = req.ip;
-  const payload = req.body;
+  const payload = req.body || {};
 
   try {
     console.log('PayHero Callback received:', JSON.stringify(payload, null, 2));
@@ -1028,10 +1171,17 @@ app.post('/api/payhero/callback', async (req, res) => {
     const externalRef = payload.external_reference || payload.reference || payload.response?.User_Reference;
     const mpesaRef = payload.mpesa_receipt || payload.response?.MPESA_Reference;
 
-    local.prepare(
-      `INSERT INTO callback_log (external_reference, raw_payload, source_ip)
-       VALUES (?, ?, ?)`
-    ).run(externalRef || null, JSON.stringify(payload), sourceIp);
+    let callbackLogId = null;
+    try {
+      const info = local.prepare(
+        `INSERT INTO callback_log (external_reference, raw_payload, source_ip)
+         VALUES (?, ?, ?)`
+      ).run(externalRef || null, JSON.stringify(payload), sourceIp);
+      callbackLogId = info.lastInsertRowid;
+    } catch (e) {
+      console.error('callback_log insert failed:', e.message);
+    }
+
     syncToTurso(
       `INSERT INTO callback_log (external_reference, raw_payload, source_ip)
        VALUES (?, ?, ?)`,
@@ -1060,10 +1210,13 @@ app.post('/api/payhero/callback', async (req, res) => {
     let verifiedWithPayhero = false;
 
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
       const verifyResponse = await fetch(
-        `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(txn.external_reference)}&channel_id=${txn.channel_id}`,
-        { headers: { Authorization: getPayHeroAuthHeader() } }
+        `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(txn.external_reference)}&channel_id=${encodeURIComponent(txn.channel_id)}`,
+        { headers: { Authorization: getPayHeroAuthHeader() }, signal: controller.signal }
       );
+      clearTimeout(timer);
 
       if (verifyResponse.ok) {
         const verifyData = await verifyResponse.json();
@@ -1083,7 +1236,7 @@ app.post('/api/payhero/callback', async (req, res) => {
     if (verifiedWithPayhero) {
       finalStatus = verifiedStatus;
     } else if (callbackStatus === 'success') {
-      console.warn(`Callback claims success for ${txn.external_reference} but PayHero verification failed. Keeping pending.`);
+      console.warn(`Callback claims success for ${txn.external_reference} but PayHero verification failed. Keeping pending for retry.`);
       finalStatus = 'pending';
     } else {
       finalStatus = callbackStatus;
@@ -1111,9 +1264,15 @@ app.post('/api/payhero/callback', async (req, res) => {
       [finalStatus, mpesaRef, mpesaRef, JSON.stringify(payload), verifiedWithPayhero ? 1 : 0, txn.external_reference]
     );
 
-    local.prepare(
-      `UPDATE callback_log SET verified = ? WHERE external_reference = ? ORDER BY id DESC LIMIT 1`
-    ).run(verifiedWithPayhero ? 1 : 0, txn.external_reference);
+    // FIX: SQLite doesn't support ORDER BY/LIMIT in UPDATE — use subquery
+    if (callbackLogId) {
+      try {
+        local.prepare('UPDATE callback_log SET verified = ? WHERE id = ?')
+          .run(verifiedWithPayhero ? 1 : 0, callbackLogId);
+      } catch (e) {
+        console.error('callback_log verify update failed:', e.message);
+      }
+    }
 
     const apiKey = local.prepare('SELECT * FROM api_keys WHERE app_identifier = ?').get(txn.app_identifier);
 
@@ -1132,39 +1291,113 @@ app.post('/api/payhero/callback', async (req, res) => {
 
       const signature = signWebhookPayload(apiKey.webhook_secret, forwardPayload);
 
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-PayHero-Event': 'payment.' + finalStatus,
+      };
+      if (signature) headers['X-PayHero-Signature'] = signature;
+
+      // Fire and forget with timeout
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
       fetch(apiKey.webhook_url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-PayHero-Signature': signature,
-          'X-PayHero-Event': 'payment.' + finalStatus,
-        },
+        headers,
         body: JSON.stringify(forwardPayload),
-      }).catch((e) => console.error('Webhook forward failed:', e.message));
+        signal: controller.signal,
+      }).then(() => clearTimeout(timer))
+        .catch((e) => {
+          clearTimeout(timer);
+          console.error('Webhook forward failed:', e.message);
+        });
     }
 
     res.status(200).json({ status: 'received', verified: verifiedWithPayhero });
   } catch (error) {
     console.error('Callback processing error:', error);
+    // Always return 200 so PayHero doesn't retry-storm us
     res.status(200).json({ status: 'received_with_error' });
   }
 });
 
 // ============================================================
-// SPA FALLBACK
+// RETRY QUEUE for unverified callbacks (every 30s)
 // ============================================================
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+async function retryUnverifiedCallbacks() {
+  if (!appReady) return;
+  try {
+    const pending = local.prepare(`
+      SELECT t.id, t.external_reference, t.channel_id, t.status
+      FROM transactions t
+      JOIN callback_log c ON c.external_reference = t.external_reference
+      WHERE c.verified = 0
+        AND t.verified_with_payhero = 0
+        AND t.created_at >= datetime('now', '-1 day')
+      LIMIT 5
+    `).all();
+
+    for (const t of pending) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10000);
+        const resp = await fetch(
+          `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(t.external_reference)}&channel_id=${encodeURIComponent(t.channel_id)}`,
+          { headers: { Authorization: getPayHeroAuthHeader() }, signal: controller.signal }
+        );
+        clearTimeout(timer);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const status = normalizeStatus(data.status || data.Status || data.response?.Status);
+        if (status !== 'unknown') {
+          local.prepare(
+            `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = datetime('now') WHERE id = ?`
+          ).run(status, t.id);
+          local.prepare(
+            `UPDATE callback_log SET verified = 1 WHERE id = (SELECT MAX(id) FROM callback_log WHERE external_reference = ?)`
+          ).run(t.external_reference);
+          syncToTurso(
+            `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = CURRENT_TIMESTAMP WHERE external_reference = ?`,
+            [status, t.external_reference]
+          );
+          console.log(`Retry-verified ${t.external_reference} → ${status}`);
+        }
+      } catch (e) {
+        console.error('Retry verify failed for', t.external_reference, e.message);
+      }
+    }
+  } catch (e) {
+    console.error('retryUnverifiedCallbacks error:', e.message);
+  }
+}
+
+// ============================================================
+// SPA FALLBACK — Express 5 safe
+// ============================================================
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  if (req.path.startsWith('/api/')) return next();
+  res.sendFile(path.join(__dirname, 'public', 'index.html'), (err) => {
+    if (err) next(err);
+  });
 });
 
 // ============================================================
 // GLOBAL ERROR HANDLER
 // ============================================================
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err.message);
+  console.error('Unhandled error:', err.message, err.stack);
+  if (res.headersSent) return next(err);
+
   if (err.message === 'Not allowed by CORS') {
     return res.status(403).json({ error: 'CORS not allowed' });
   }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Payload too large' });
+  }
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON body' });
+  }
+
   const statusCode = err.statusCode || 500;
   const message = err.isOperational ? err.message : 'Internal server error';
   res.status(statusCode).json({ error: message });
@@ -1173,24 +1406,29 @@ app.use((err, req, res, next) => {
 // ============================================================
 // START
 // ============================================================
-app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
   console.log(`PayHero Central API listening on port ${PORT}`);
 
-  hydrateFromTurso()
-    .then(() => console.log('Startup complete'))
-    .catch((e) => console.error('Startup error:', e.message));
+  try {
+    await hydrateFromTurso();
+    appReady = true;
+    console.log('Startup complete — accepting API requests');
+  } catch (e) {
+    console.error('Startup error:', e.message);
+    // Even on failure, mark ready so local-only mode works
+    appReady = true;
+    console.log('Continuing in local-only mode');
+  }
 });
 
 // ============================================================
 // PERIODIC FLUSH TO TURSO
 // ============================================================
 setInterval(async () => {
-  if (!turso || !tursoReady) return;
+  if (!turso || !tursoReady || !appReady) return;
 
-  // Drain the queue first
   await flushTursoQueue();
 
-  // Then do the full-table sync as a safety net
   try {
     const keys = local.prepare('SELECT * FROM api_keys').all();
     for (const k of keys) {
@@ -1219,3 +1457,42 @@ setInterval(async () => {
     console.error('Periodic flush error:', e.message);
   }
 }, 30000);
+
+// Retry unverified callbacks every 30s
+setInterval(retryUnverifiedCallbacks, 30000);
+
+// ============================================================
+// GRACEFUL SHUTDOWN
+// ============================================================
+async function shutdown(signal) {
+  console.log(`Received ${signal}, shutting down gracefully...`);
+  server.close(() => console.log('HTTP server closed'));
+
+  try {
+    await flushTursoQueue();
+    console.log('Turso queue flushed');
+  } catch (e) {
+    console.error('Shutdown flush error:', e.message);
+  }
+
+  try {
+    local.close();
+    console.log('Local DB closed');
+  } catch (e) {
+    console.error('Local DB close error:', e.message);
+  }
+
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  // Don't exit — Render will restart, but we want to log first
+});
