@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const { createClient } = require('@libsql/client');
@@ -12,17 +13,79 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ============================================================
+// SECURITY: Trust proxy (Render runs behind a load balancer)
+// ============================================================
+app.set('trust proxy', 1); // Exactly one proxy in front (Render's LB)
+app.disable('x-powered-by'); // Don't leak Express
+
+// ============================================================
+// SECURITY: Helmet with strict Content Security Policy
+// ============================================================
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"], // Needed for inline scripts and Chart.js
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://api.payhero.co.ke", "https://backend.payhero.co.ke"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"], // Clickjacking protection
+      upgradeInsecureRequests: [],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Required for Chart.js
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
+
+// ============================================================
+// SECURITY: CORS (restrict to your frontend in production)
+// ============================================================
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : ['https://payheroapi.onrender.com'];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, same-origin)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // In development, allow all
+    if (process.env.NODE_ENV !== 'production') return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-admin-token', 'x-api-key', 'idempotency-key'],
+}));
+
+// ============================================================
+// SECURITY: Body size limits (prevent memory exhaustion DoS)
+// ============================================================
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+  etag: true,
+}));
+
+// ============================================================
 // LOCAL SQLITE BUFFER
 // ============================================================
-// This is the primary read/write store for the running instance.
-// Writes are mirrored to Turso asynchronously for durability.
-// On startup, we hydrate from Turso so redeploys don't lose data.
 const DB_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
 const LOCAL_DB_PATH = path.join(DB_DIR, 'buffer.db');
 
 const local = new Database(LOCAL_DB_PATH);
 local.pragma('journal_mode = WAL');
+local.pragma('synchronous = NORMAL');
 local.pragma('foreign_keys = ON');
 
 function initLocalSchema() {
@@ -34,9 +97,13 @@ function initLocalSchema() {
       name TEXT,
       app_identifier TEXT,
       channel_id TEXT,
+      webhook_url TEXT,
+      webhook_secret TEXT,
+      rate_limit_per_min INTEGER DEFAULT 100,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
-      last_used_at TEXT
+      last_used_at TEXT,
+      expires_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS transactions (
@@ -44,11 +111,13 @@ function initLocalSchema() {
       external_reference TEXT UNIQUE,
       app_identifier TEXT,
       payhero_reference TEXT,
+      mpesa_receipt TEXT,
       channel_id TEXT,
       phone_number TEXT,
       amount REAL,
       status TEXT DEFAULT 'pending',
       callback_payload TEXT,
+      verified_with_payhero INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -63,10 +132,21 @@ function initLocalSchema() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS callback_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      external_reference TEXT,
+      raw_payload TEXT,
+      verified INTEGER DEFAULT 0,
+      source_ip TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_txn_ext_ref ON transactions(external_reference);
     CREATE INDEX IF NOT EXISTS idx_txn_payhero_ref ON transactions(payhero_reference);
+    CREATE INDEX IF NOT EXISTS idx_txn_mpesa_ref ON transactions(mpesa_receipt);
     CREATE INDEX IF NOT EXISTS idx_txn_status ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_log_created ON request_log(created_at);
+    CREATE INDEX IF NOT EXISTS idx_callback_ext_ref ON callback_log(external_reference);
   `);
   console.log('Local DB schema ready');
 }
@@ -74,7 +154,7 @@ function initLocalSchema() {
 initLocalSchema();
 
 // ============================================================
-// TURSO CLOUD (durability layer)
+// TURSO CLOUD
 // ============================================================
 let turso = null;
 let tursoReady = false;
@@ -102,9 +182,13 @@ async function initTursoSchema() {
       name TEXT,
       app_identifier TEXT,
       channel_id TEXT,
+      webhook_url TEXT,
+      webhook_secret TEXT,
+      rate_limit_per_min INTEGER DEFAULT 100,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      last_used_at DATETIME
+      last_used_at DATETIME,
+      expires_at DATETIME
     )
   `);
   await turso.execute(`
@@ -113,11 +197,13 @@ async function initTursoSchema() {
       external_reference TEXT UNIQUE,
       app_identifier TEXT,
       payhero_reference TEXT,
+      mpesa_receipt TEXT,
       channel_id TEXT,
       phone_number TEXT,
       amount REAL,
       status TEXT DEFAULT 'pending',
       callback_payload TEXT,
+      verified_with_payhero INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
@@ -133,9 +219,18 @@ async function initTursoSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await turso.execute(`
+    CREATE TABLE IF NOT EXISTS callback_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      external_reference TEXT,
+      raw_payload TEXT,
+      verified INTEGER DEFAULT 0,
+      source_ip TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 }
 
-// Sync a single write to Turso (fire and forget, non-blocking)
 function syncToTurso(sql, args = []) {
   if (!turso || !tursoReady) return;
   turso.execute({ sql, args }).catch((e) => {
@@ -143,9 +238,6 @@ function syncToTurso(sql, args = []) {
   });
 }
 
-// Hydrate local DB from Turso on startup.
-// Local is authoritative for the running instance; Turso is the backup.
-// We merge: pull anything from Turso that isn't in local.
 async function hydrateFromTurso() {
   if (!turso) {
     console.log('No Turso — skipping hydration');
@@ -157,50 +249,51 @@ async function hydrateFromTurso() {
     tursoReady = true;
     console.log('Turso schema ready');
 
-    // Pull API keys from Turso that aren't in local
+    // Pull API keys
     const remoteKeys = await turso.execute('SELECT * FROM api_keys');
     const insertKey = local.prepare(`
       INSERT OR IGNORE INTO api_keys
-      (key_hash, key_preview, name, app_identifier, channel_id, is_active, created_at, last_used_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min, is_active, created_at, last_used_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     let keyCount = 0;
     for (const k of remoteKeys.rows) {
       const info = insertKey.run(
         k.key_hash, k.key_preview, k.name, k.app_identifier,
-        k.channel_id, k.is_active, k.created_at, k.last_used_at
+        k.channel_id, k.webhook_url || null, k.webhook_secret || null,
+        k.rate_limit_per_min || 100, k.is_active, k.created_at, k.last_used_at, k.expires_at || null
       );
       if (info.changes) keyCount++;
     }
 
-    // Pull transactions from Turso that aren't in local
+    // Pull transactions
     const remoteTxns = await turso.execute('SELECT * FROM transactions');
     const insertTxn = local.prepare(`
       INSERT OR IGNORE INTO transactions
-      (external_reference, app_identifier, payhero_reference, channel_id,
-       phone_number, amount, status, callback_payload, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (external_reference, app_identifier, payhero_reference, mpesa_receipt, channel_id,
+       phone_number, amount, status, callback_payload, verified_with_payhero, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     let txnCount = 0;
     for (const t of remoteTxns.rows) {
       const info = insertTxn.run(
         t.external_reference, t.app_identifier, t.payhero_reference,
-        t.channel_id, t.phone_number, t.amount, t.status,
-        t.callback_payload, t.created_at, t.updated_at
+        t.mpesa_receipt || null, t.channel_id, t.phone_number, t.amount, t.status,
+        t.callback_payload, t.verified_with_payhero || 0, t.created_at, t.updated_at
       );
       if (info.changes) txnCount++;
     }
 
-    // Optionally: push any local rows that Turso doesn't have yet
-    // (In case Turso is behind — e.g., last instance wrote locally then crashed)
+    // Push local rows not yet in Turso
     const localKeys = local.prepare('SELECT * FROM api_keys').all();
     for (const k of localKeys) {
       syncToTurso(
         `INSERT OR IGNORE INTO api_keys
-         (key_hash, key_preview, name, app_identifier, channel_id, is_active, created_at, last_used_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [k.key_hash, k.key_preview, k.name, k.app_identifier,
-         k.channel_id, k.is_active, k.created_at, k.last_used_at]
+         (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min, is_active, created_at, last_used_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [k.key_hash, k.key_preview, k.name, k.app_identifier, k.channel_id,
+         k.webhook_url, k.webhook_secret, k.rate_limit_per_min, k.is_active,
+         k.created_at, k.last_used_at, k.expires_at]
       );
     }
 
@@ -208,12 +301,12 @@ async function hydrateFromTurso() {
     for (const t of localTxns) {
       syncToTurso(
         `INSERT OR IGNORE INTO transactions
-         (external_reference, app_identifier, payhero_reference, channel_id,
-          phone_number, amount, status, callback_payload, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [t.external_reference, t.app_identifier, t.payhero_reference,
-         t.channel_id, t.phone_number, t.amount, t.status,
-         t.callback_payload, t.created_at, t.updated_at]
+         (external_reference, app_identifier, payhero_reference, mpesa_receipt, channel_id,
+          phone_number, amount, status, callback_payload, verified_with_payhero, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [t.external_reference, t.app_identifier, t.payhero_reference, t.mpesa_receipt,
+         t.channel_id, t.phone_number, t.amount, t.status, t.callback_payload,
+         t.verified_with_payhero, t.created_at, t.updated_at]
       );
     }
 
@@ -223,22 +316,6 @@ async function hydrateFromTurso() {
     console.log('Continuing with local-only data');
   }
 }
-
-// ============================================================
-// MIDDLEWARE
-// ============================================================
-app.use(cors());
-app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
-
-const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
-  message: { error: 'Too many requests, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api/', limiter);
 
 // ============================================================
 // HELPERS
@@ -251,11 +328,27 @@ function generateApiKey() {
   return 'phk_' + crypto.randomBytes(32).toString('hex');
 }
 
+function generateWebhookSecret() {
+  return 'whsec_' + crypto.randomBytes(32).toString('hex');
+}
+
 function getPayHeroAuthHeader() {
   const credentials = Buffer.from(
     `${process.env.PAYHERO_API_USERNAME}:${process.env.PAYHERO_API_PASSWORD}`
   ).toString('base64');
   return `Basic ${credentials}`;
+}
+
+function signWebhookPayload(secret, payload) {
+  return crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+}
+
+function normalizeStatus(raw) {
+  const v = String(raw || '').toLowerCase();
+  if (v.includes('success') || v === '1' || v === 'paid' || v === 'completed') return 'success';
+  if (v.includes('fail') || v.includes('cancel') || v === '0') return 'failed';
+  if (v.includes('pending') || v.includes('process') || v === '2') return 'pending';
+  return 'unknown';
 }
 
 function logRequest(apiKeyRecord, req, statusCode) {
@@ -273,19 +366,42 @@ function logRequest(apiKeyRecord, req, statusCode) {
     syncToTurso(
       `INSERT INTO request_log (api_key_id, app_identifier, endpoint, method, status_code)
        VALUES (?, ?, ?, ?, ?)`,
-      [
-        apiKeyRecord ? apiKeyRecord.id : null,
-        apiKeyRecord ? apiKeyRecord.app_identifier : null,
-        req.path,
-        req.method,
-        statusCode,
-      ]
+      [apiKeyRecord ? apiKeyRecord.id : null, apiKeyRecord ? apiKeyRecord.app_identifier : null,
+       req.path, req.method, statusCode]
     );
   } catch (e) {
     console.error('Log error:', e.message);
   }
 }
 
+// ============================================================
+// SECURITY: Per-key rate limiter
+// ============================================================
+const keyRateLimits = new Map(); // keyId -> { count, resetAt }
+
+function checkKeyRateLimit(keyRecord) {
+  const now = Date.now();
+  const limit = keyRecord.rate_limit_per_min || 100;
+  const entry = keyRateLimits.get(keyRecord.id) || { count: 0, resetAt: now + 60000 };
+
+  if (now > entry.resetAt) {
+    entry.count = 0;
+    entry.resetAt = now + 60000;
+  }
+
+  entry.count++;
+  keyRateLimits.set(keyRecord.id, entry);
+
+  return {
+    allowed: entry.count <= limit,
+    remaining: Math.max(0, limit - entry.count),
+    reset: entry.resetAt,
+  };
+}
+
+// ============================================================
+// AUTH MIDDLEWARE
+// ============================================================
 function authenticateApiKey(req, res, next) {
   const apiKey = req.headers['x-api-key'] || req.query.api_key;
 
@@ -303,13 +419,24 @@ function authenticateApiKey(req, res, next) {
     return res.status(403).json({ error: 'Invalid or inactive API key' });
   }
 
-  local.prepare(
-    "UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?"
-  ).run(keyRecord.id);
-  syncToTurso(
-    "UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?",
-    [keyRecord.id]
-  );
+  // Check key expiry
+  if (keyRecord.expires_at && new Date(keyRecord.expires_at) < new Date()) {
+    logRequest(keyRecord, req, 403);
+    return res.status(403).json({ error: 'API key expired' });
+  }
+
+  // Per-key rate limit
+  const rate = checkKeyRateLimit(keyRecord);
+  res.set('X-RateLimit-Limit', keyRecord.rate_limit_per_min || 100);
+  res.set('X-RateLimit-Remaining', rate.remaining);
+
+  if (!rate.allowed) {
+    logRequest(keyRecord, req, 429);
+    return res.status(429).json({ error: 'Rate limit exceeded for this API key' });
+  }
+
+  local.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").run(keyRecord.id);
+  syncToTurso("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?", [keyRecord.id]);
 
   req.apiKeyRecord = keyRecord;
   next();
@@ -317,14 +444,24 @@ function authenticateApiKey(req, res, next) {
 
 function adminAuth(req, res, next) {
   const adminToken = req.headers['x-admin-token'] || req.query.admin_token;
-  if (adminToken !== process.env.ADMIN_PASSWORD) {
+  const expected = process.env.ADMIN_PASSWORD;
+
+  if (!expected) {
+    return res.status(500).json({ error: 'Admin password not configured' });
+  }
+
+  // Timing-safe comparison
+  const provided = Buffer.from(String(adminToken || ''));
+  const correct = Buffer.from(String(expected));
+
+  if (provided.length !== correct.length || !crypto.timingSafeEqual(provided, correct)) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
   next();
 }
 
 // ============================================================
-// HEALTH CHECK (must be first — Render probes this)
+// HEALTH CHECK
 // ============================================================
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -338,9 +475,26 @@ app.get('/health', (req, res) => {
 // ADMIN ROUTES
 // ============================================================
 
-app.post('/api/admin/login', (req, res) => {
+// Stricter rate limit for login (prevent brute force)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per 15 min
+  message: { error: 'Too many login attempts. Try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post('/api/admin/login', loginLimiter, (req, res) => {
   const { password } = req.body;
-  if (password === process.env.ADMIN_PASSWORD) {
+
+  if (!process.env.ADMIN_PASSWORD) {
+    return res.status(500).json({ error: 'Admin password not configured' });
+  }
+
+  const provided = Buffer.from(String(password || ''));
+  const correct = Buffer.from(String(process.env.ADMIN_PASSWORD));
+
+  if (provided.length === correct.length && crypto.timingSafeEqual(provided, correct)) {
     return res.json({ success: true });
   }
   res.status(403).json({ error: 'Invalid password' });
@@ -349,47 +503,56 @@ app.post('/api/admin/login', (req, res) => {
 app.get('/api/admin/keys', adminAuth, (req, res) => {
   try {
     const rows = local.prepare(
-      'SELECT id, key_preview, name, app_identifier, channel_id, is_active, created_at, last_used_at FROM api_keys ORDER BY created_at DESC'
+      `SELECT id, key_preview, name, app_identifier, channel_id, webhook_url, 
+              rate_limit_per_min, is_active, created_at, last_used_at, expires_at 
+       FROM api_keys ORDER BY created_at DESC`
     ).all();
     res.json(rows);
   } catch (e) {
     console.error('List keys error:', e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Failed to list keys' });
   }
 });
 
 app.post('/api/admin/keys', adminAuth, (req, res) => {
   try {
-    const { name, app_identifier, channel_id } = req.body;
+    const { name, app_identifier, channel_id, webhook_url, rate_limit_per_min } = req.body;
 
     if (!name || !channel_id) {
       return res.status(400).json({ error: 'Name and Channel ID are required' });
     }
 
+    // Validate channel_id format (alphanumeric)
+    if (!/^[a-zA-Z0-9_-]{1,50}$/.test(channel_id)) {
+      return res.status(400).json({ error: 'Invalid channel_id format' });
+    }
+
     const newKey = generateApiKey();
     const keyHash = hashKey(newKey);
     const preview = newKey.slice(0, 12) + '...' + newKey.slice(-4);
+    const webhookSecret = webhook_url ? generateWebhookSecret() : null;
 
     local.prepare(
-      `INSERT INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(keyHash, preview, name, app_identifier || name, channel_id);
+      `INSERT INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(keyHash, preview, name, app_identifier || name, channel_id, webhook_url || null, webhookSecret, rate_limit_per_min || 100);
 
     syncToTurso(
-      `INSERT OR IGNORE INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id)
-       VALUES (?, ?, ?, ?, ?)`,
-      [keyHash, preview, name, app_identifier || name, channel_id]
+      `INSERT OR IGNORE INTO api_keys (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [keyHash, preview, name, app_identifier || name, channel_id, webhook_url || null, webhookSecret, rate_limit_per_min || 100]
     );
 
     res.json({
       api_key: newKey,
-      message: 'Store this key securely. It will not be shown again.',
+      webhook_secret: webhookSecret,
+      message: 'Store these securely. They will not be shown again.',
       name,
       channel_id,
     });
   } catch (e) {
     console.error('Create key error:', e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Failed to create key' });
   }
 });
 
@@ -399,7 +562,7 @@ app.patch('/api/admin/keys/:id/revoke', adminAuth, (req, res) => {
     syncToTurso('UPDATE api_keys SET is_active = 0 WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Failed to revoke key' });
   }
 });
 
@@ -409,7 +572,7 @@ app.patch('/api/admin/keys/:id/activate', adminAuth, (req, res) => {
     syncToTurso('UPDATE api_keys SET is_active = 1 WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Failed to activate key' });
   }
 });
 
@@ -422,7 +585,7 @@ app.delete('/api/admin/keys/:id', adminAuth, (req, res) => {
     }
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Failed to delete key' });
   }
 });
 
@@ -433,11 +596,15 @@ app.post('/api/admin/keys/verify', adminAuth, (req, res) => {
 
     const keyHash = hashKey(api_key);
     const k = local
-      .prepare('SELECT id, name, channel_id, is_active FROM api_keys WHERE key_hash = ?')
+      .prepare('SELECT id, name, channel_id, is_active, expires_at FROM api_keys WHERE key_hash = ?')
       .get(keyHash);
 
     if (!k) {
       return res.json({ valid: false, reason: 'Key not found' });
+    }
+
+    if (k.expires_at && new Date(k.expires_at) < new Date()) {
+      return res.json({ valid: false, reason: 'Key expired' });
     }
 
     res.json({
@@ -447,31 +614,20 @@ app.post('/api/admin/keys/verify', adminAuth, (req, res) => {
       active: k.is_active === 1,
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Verification failed' });
   }
 });
 
 app.get('/api/admin/stats', adminAuth, (req, res) => {
   try {
-    const keys = local.prepare(
-      'SELECT COUNT(*) as c, SUM(is_active) as active FROM api_keys'
-    ).get();
+    const keys = local.prepare('SELECT COUNT(*) as c, SUM(is_active) as active FROM api_keys').get();
     const txns = local.prepare('SELECT COUNT(*) as c FROM transactions').get();
-    const revenue = local.prepare(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE status = 'success'"
-    ).get();
-    const recent = local.prepare(
-      "SELECT COUNT(*) as c FROM transactions WHERE created_at >= datetime('now', '-24 hours')"
-    ).get();
-    const successCount = local.prepare(
-      "SELECT COUNT(*) as c FROM transactions WHERE status = 'success'"
-    ).get();
-    const pendingCount = local.prepare(
-      "SELECT COUNT(*) as c FROM transactions WHERE status = 'pending'"
-    ).get();
-    const failedCount = local.prepare(
-      "SELECT COUNT(*) as c FROM transactions WHERE status = 'failed'"
-    ).get();
+    const revenue = local.prepare("SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE status = 'success'").get();
+    const recent = local.prepare("SELECT COUNT(*) as c FROM transactions WHERE created_at >= datetime('now', '-24 hours')").get();
+    const successCount = local.prepare("SELECT COUNT(*) as c FROM transactions WHERE status = 'success'").get();
+    const pendingCount = local.prepare("SELECT COUNT(*) as c FROM transactions WHERE status = 'pending'").get();
+    const failedCount = local.prepare("SELECT COUNT(*) as c FROM transactions WHERE status = 'failed'").get();
+    const unverifiedCallbacks = local.prepare("SELECT COUNT(*) as c FROM callback_log WHERE verified = 0").get();
 
     res.json({
       total_keys: keys.c,
@@ -482,17 +638,17 @@ app.get('/api/admin/stats', adminAuth, (req, res) => {
       success_count: successCount.c,
       pending_count: pendingCount.c,
       failed_count: failedCount.c,
+      unverified_callbacks: unverifiedCallbacks.c,
     });
   } catch (e) {
     console.error('Stats error:', e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
 
 app.get('/api/admin/transactions', adminAuth, (req, res) => {
   try {
     const { status, limit = 50, offset = 0 } = req.query;
-
     let sql = 'SELECT * FROM transactions';
     const args = [];
 
@@ -502,54 +658,42 @@ app.get('/api/admin/transactions', adminAuth, (req, res) => {
     }
 
     sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    args.push(parseInt(limit), parseInt(offset));
+    args.push(Math.min(parseInt(limit) || 50, 500), parseInt(offset) || 0);
 
     const rows = local.prepare(sql).all(...args);
     res.json(rows);
   } catch (e) {
     console.error('Transactions error:', e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Failed to fetch transactions' });
   }
 });
 
 app.get('/api/admin/charts', adminAuth, (req, res) => {
   try {
     const daily = local.prepare(`
-      SELECT date(created_at) as day,
-             COUNT(*) as count,
+      SELECT date(created_at) as day, COUNT(*) as count,
              COALESCE(SUM(CASE WHEN status='success' THEN amount ELSE 0 END), 0) as revenue
       FROM transactions
       WHERE created_at >= datetime('now', '-7 days')
-      GROUP BY date(created_at)
-      ORDER BY day ASC
+      GROUP BY date(created_at) ORDER BY day ASC
     `).all();
 
-    const byStatus = local.prepare(`
-      SELECT status, COUNT(*) as count FROM transactions GROUP BY status
-    `).all();
-
+    const byStatus = local.prepare('SELECT status, COUNT(*) as count FROM transactions GROUP BY status').all();
     const byApp = local.prepare(`
       SELECT app_identifier, COUNT(*) as count,
              COALESCE(SUM(CASE WHEN status='success' THEN amount ELSE 0 END), 0) as revenue
-      FROM transactions
-      GROUP BY app_identifier
-      ORDER BY count DESC
-      LIMIT 10
+      FROM transactions GROUP BY app_identifier ORDER BY count DESC LIMIT 10
     `).all();
-
     const recentRequests = local.prepare(`
-      SELECT endpoint, method, COUNT(*) as count
-      FROM request_log
+      SELECT endpoint, method, COUNT(*) as count FROM request_log
       WHERE created_at >= datetime('now', '-7 days')
-      GROUP BY endpoint, method
-      ORDER BY count DESC
-      LIMIT 10
+      GROUP BY endpoint, method ORDER BY count DESC LIMIT 10
     `).all();
 
     res.json({ daily, byStatus, byApp, recentRequests });
   } catch (e) {
     console.error('Charts error:', e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Failed to fetch charts' });
   }
 });
 
@@ -562,42 +706,60 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
     const { phone_number, amount, external_reference, callback_url } = req.body;
     const channelId = req.apiKeyRecord.channel_id;
 
+    // Validate inputs
     if (!phone_number || !amount || !external_reference) {
       logRequest(req.apiKeyRecord, req, 400);
-      return res.status(400).json({
-        error: 'phone_number, amount, and external_reference are required',
+      return res.status(400).json({ error: 'phone_number, amount, and external_reference are required' });
+    }
+
+    if (!/^254[17]\d{8}$/.test(phone_number)) {
+      logRequest(req.apiKeyRecord, req, 400);
+      return res.status(400).json({ error: 'Invalid phone number format. Use 254XXXXXXXXX' });
+    }
+
+    if (typeof amount !== 'number' || amount <= 0 || amount > 500000) {
+      logRequest(req.apiKeyRecord, req, 400);
+      return res.status(400).json({ error: 'Amount must be between 1 and 500,000 KES' });
+    }
+
+    // Idempotency: check if reference already exists
+    const existing = local.prepare(
+      'SELECT * FROM transactions WHERE external_reference = ?'
+    ).get(external_reference);
+
+    if (existing) {
+      logRequest(req.apiKeyRecord, req, 200);
+      return res.json({
+        success: true,
+        external_reference,
+        idempotent: true,
+        message: 'Transaction already exists',
+        transaction: existing,
       });
     }
 
+    // Insert pending transaction
     local.prepare(
-      `INSERT OR IGNORE INTO transactions
-       (external_reference, app_identifier, channel_id, phone_number, amount, status)
+      `INSERT INTO transactions (external_reference, app_identifier, channel_id, phone_number, amount, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`
-    ).run(
-      external_reference,
-      req.apiKeyRecord.app_identifier,
-      channelId,
-      phone_number,
-      amount
-    );
+    ).run(external_reference, req.apiKeyRecord.app_identifier, channelId, phone_number, amount);
+
     syncToTurso(
-      `INSERT OR IGNORE INTO transactions
-       (external_reference, app_identifier, channel_id, phone_number, amount, status)
+      `INSERT OR IGNORE INTO transactions (external_reference, app_identifier, channel_id, phone_number, amount, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`,
       [external_reference, req.apiKeyRecord.app_identifier, channelId, phone_number, amount]
     );
 
+    // Call PayHero API
     const payheroPayload = {
       amount,
       phone_number,
       channel_id: channelId,
       external_reference,
-      callback_url:
-        callback_url ||
-        `${req.protocol}://${req.get('host')}/api/payhero/callback`,
+      callback_url: callback_url || `${req.protocol}://${req.get('host')}/api/payhero/callback`,
     };
 
-    const response = await fetch('https://api.payhero.co.ke/api/v2/payments', {
+    const response = await fetch('https://backend.payhero.co.ke/api/v2/payments/initiate-stk-push', {
       method: 'POST',
       headers: {
         Authorization: getPayHeroAuthHeader(),
@@ -616,13 +778,15 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       });
     }
 
-    if (data.reference) {
+    // Store PayHero reference if returned
+    const payheroRef = data.reference || data.response?.reference || data.response?.Transaction_Reference;
+    if (payheroRef) {
       local.prepare(
         "UPDATE transactions SET payhero_reference = ?, updated_at = datetime('now') WHERE external_reference = ?"
-      ).run(data.reference, external_reference);
+      ).run(payheroRef, external_reference);
       syncToTurso(
         "UPDATE transactions SET payhero_reference = ?, updated_at = datetime('now') WHERE external_reference = ?",
-        [data.reference, external_reference]
+        [payheroRef, external_reference]
       );
     }
 
@@ -640,17 +804,19 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
     const { reference } = req.params;
     const channelId = req.apiKeyRecord.channel_id;
 
+    // Check local DB first
     const t = local.prepare(
-      'SELECT * FROM transactions WHERE external_reference = ? OR payhero_reference = ?'
-    ).get(reference, reference);
+      'SELECT * FROM transactions WHERE external_reference = ? OR payhero_reference = ? OR mpesa_receipt = ?'
+    ).get(reference, reference, reference);
 
-    if (t && t.status !== 'pending') {
+    if (t && t.status !== 'pending' && t.verified_with_payhero) {
       logRequest(req.apiKeyRecord, req, 200);
       return res.json({ source: 'local', transaction: t });
     }
 
+    // Query PayHero directly for verification
     const response = await fetch(
-      `https://api.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(reference)}&channel_id=${channelId}`,
+      `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(reference)}&channel_id=${channelId}`,
       { headers: { Authorization: getPayHeroAuthHeader() } }
     );
 
@@ -664,6 +830,20 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
       });
     }
 
+    // Update local if we have a matching transaction
+    if (t) {
+      const normalized = normalizeStatus(data.status || data.Status || data.response?.Status);
+      if (normalized !== 'unknown') {
+        local.prepare(
+          `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = datetime('now') WHERE id = ?`
+        ).run(normalized, t.id);
+        syncToTurso(
+          `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = CURRENT_TIMESTAMP WHERE external_reference = ?`,
+          [normalized, t.external_reference]
+        );
+      }
+    }
+
     logRequest(req.apiKeyRecord, req, 200);
     res.json({ source: 'payhero', transaction: data });
   } catch (error) {
@@ -674,41 +854,154 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
 });
 
 // ============================================================
-// PAYHERO CALLBACK
+// PAYHERO CALLBACK — SECURITY CRITICAL
 // ============================================================
-app.post('/api/payhero/callback', (req, res) => {
+// PayHero does NOT sign callbacks. We cannot trust the payload alone.
+// Strategy: always re-query PayHero's status API to verify before
+// marking a transaction as successful.
+app.post('/api/payhero/callback', async (req, res) => {
+  const sourceIp = req.ip;
+  const payload = req.body;
+
   try {
-    const payload = req.body;
-    console.log('PayHero Callback:', JSON.stringify(payload, null, 2));
+    console.log('PayHero Callback received:', JSON.stringify(payload, null, 2));
 
-    const externalRef = payload.external_reference || payload.reference;
-    const status = payload.status || payload.transaction_status;
-    const payheroRef = payload.payhero_reference || payload.mpesa_receipt;
+    // Log ALL callbacks for audit
+    const externalRef = payload.external_reference || payload.reference || payload.response?.User_Reference;
+    const mpesaRef = payload.mpesa_receipt || payload.response?.MPESA_Reference;
 
-    if (externalRef) {
-      local.prepare(
-        `UPDATE transactions
-         SET status = ?,
-             payhero_reference = COALESCE(?, payhero_reference),
-             callback_payload = ?,
-             updated_at = datetime('now')
-         WHERE external_reference = ?`
-      ).run(status, payheroRef, JSON.stringify(payload), externalRef);
+    local.prepare(
+      `INSERT INTO callback_log (external_reference, raw_payload, source_ip)
+       VALUES (?, ?, ?)`
+    ).run(externalRef || null, JSON.stringify(payload), sourceIp);
+    syncToTurso(
+      `INSERT INTO callback_log (external_reference, raw_payload, source_ip)
+       VALUES (?, ?, ?)`,
+      [externalRef || null, JSON.stringify(payload), sourceIp]
+    );
 
-      syncToTurso(
-        `UPDATE transactions
-         SET status = ?,
-             payhero_reference = COALESCE(?, payhero_reference),
-             callback_payload = ?,
-             updated_at = CURRENT_TIMESTAMP
-         WHERE external_reference = ?`,
-        [status, payheroRef, JSON.stringify(payload), externalRef]
-      );
+    if (!externalRef && !mpesaRef) {
+      console.warn('Callback missing reference, ignoring');
+      return res.status(200).json({ status: 'received_no_reference' });
     }
 
-    res.status(200).json({ status: 'received' });
+    // Find the transaction
+    let txn = null;
+    if (externalRef) {
+      txn = local.prepare('SELECT * FROM transactions WHERE external_reference = ?').get(externalRef);
+    }
+    if (!txn && mpesaRef) {
+      txn = local.prepare('SELECT * FROM transactions WHERE payhero_reference = ? OR mpesa_receipt = ?').get(mpesaRef, mpesaRef);
+    }
+
+    if (!txn) {
+      console.warn('Callback for unknown transaction:', externalRef || mpesaRef);
+      return res.status(200).json({ status: 'received_unknown_transaction' });
+    }
+
+    // SECURITY: Re-query PayHero to verify the actual status
+    // This prevents fake callbacks from marking orders as paid
+    let verifiedStatus = null;
+    let verifiedWithPayhero = false;
+
+    try {
+      const verifyResponse = await fetch(
+        `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(txn.external_reference)}&channel_id=${txn.channel_id}`,
+        { headers: { Authorization: getPayHeroAuthHeader() } }
+      );
+
+      if (verifyResponse.ok) {
+        const verifyData = await verifyResponse.json();
+        const rawStatus = verifyData.status || verifyData.Status || verifyData.response?.Status;
+        verifiedStatus = normalizeStatus(rawStatus);
+        verifiedWithPayhero = verifiedStatus !== 'unknown';
+      }
+    } catch (e) {
+      console.error('PayHero verification failed:', e.message);
+      // If verification fails, DO NOT mark as successful
+    }
+
+    // If we couldn't verify with PayHero, only trust the callback if it's NOT claiming success
+    const callbackStatus = normalizeStatus(
+      payload.status || payload.Status || payload.transaction_status || payload.response?.Status
+    );
+
+    let finalStatus;
+    if (verifiedWithPayhero) {
+      finalStatus = verifiedStatus;
+    } else if (callbackStatus === 'success') {
+      // Callback claims success but we couldn't verify — do NOT trust
+      console.warn(`Callback claims success for ${txn.external_reference} but PayHero verification failed. Keeping pending.`);
+      finalStatus = 'pending';
+    } else {
+      // Non-success callbacks can be trusted (they don't cause harm)
+      finalStatus = callbackStatus;
+    }
+
+    // Don't downgrade from success
+    if (txn.status === 'success' && finalStatus !== 'success') {
+      console.log(`Ignoring downgrade attempt for ${txn.external_reference}`);
+      return res.status(200).json({ status: 'received_ignored_downgrade' });
+    }
+
+    // Update transaction
+    local.prepare(
+      `UPDATE transactions
+       SET status = ?, payhero_reference = COALESCE(?, payhero_reference),
+           mpesa_receipt = COALESCE(?, mpesa_receipt),
+           callback_payload = ?, verified_with_payhero = ?, updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(finalStatus, mpesaRef, mpesaRef, JSON.stringify(payload), verifiedWithPayhero ? 1 : 0, txn.id);
+
+    syncToTurso(
+      `UPDATE transactions
+       SET status = ?, payhero_reference = COALESCE(?, payhero_reference),
+           mpesa_receipt = COALESCE(?, mpesa_receipt),
+           callback_payload = ?, verified_with_payhero = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE external_reference = ?`,
+      [finalStatus, mpesaRef, mpesaRef, JSON.stringify(payload), verifiedWithPayhero ? 1 : 0, txn.external_reference]
+    );
+
+    // Mark callback as verified in log
+    local.prepare(
+      `UPDATE callback_log SET verified = ? WHERE external_reference = ? ORDER BY id DESC LIMIT 1`
+    ).run(verifiedWithPayhero ? 1 : 0, txn.external_reference);
+
+    // ============================================================
+    // FORWARD TO APP WEBHOOK (if configured)
+    // ============================================================
+    const apiKey = local.prepare('SELECT * FROM api_keys WHERE app_identifier = ?').get(txn.app_identifier);
+
+    if (apiKey && apiKey.webhook_url) {
+      const forwardPayload = {
+        event: 'payment.' + finalStatus,
+        external_reference: txn.external_reference,
+        payhero_reference: mpesaRef || txn.payhero_reference,
+        mpesa_receipt: mpesaRef,
+        amount: txn.amount,
+        phone_number: txn.phone_number,
+        status: finalStatus,
+        verified: verifiedWithPayhero,
+        timestamp: new Date().toISOString(),
+      };
+
+      const signature = signWebhookPayload(apiKey.webhook_secret, forwardPayload);
+
+      fetch(apiKey.webhook_url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-PayHero-Signature': signature,
+          'X-PayHero-Event': 'payment.' + finalStatus,
+        },
+        body: JSON.stringify(forwardPayload),
+      }).catch((e) => console.error('Webhook forward failed:', e.message));
+    }
+
+    res.status(200).json({ status: 'received', verified: verifiedWithPayhero });
   } catch (error) {
-    console.error('Callback error:', error);
+    console.error('Callback processing error:', error);
+    // Always return 200 so PayHero doesn't retry indefinitely
     res.status(200).json({ status: 'received_with_error' });
   }
 });
@@ -721,7 +1014,18 @@ app.get('*', (req, res) => {
 });
 
 // ============================================================
-// START (non-blocking, for Render health checks)
+// GLOBAL ERROR HANDLER (no stack traces leaked)
+// ============================================================
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err.message);
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ error: 'CORS not allowed' });
+  }
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// ============================================================
+// START (non-blocking for Render health checks)
 // ============================================================
 app.listen(PORT, () => {
   console.log(`PayHero Central API listening on port ${PORT}`);
@@ -730,3 +1034,37 @@ app.listen(PORT, () => {
     .then(() => console.log('Startup complete'))
     .catch((e) => console.error('Startup error:', e.message));
 });
+
+// ============================================================
+// PERIODIC FLUSH to Turso (safety net)
+// ============================================================
+setInterval(async () => {
+  if (!turso || !tursoReady) return;
+  try {
+    const keys = local.prepare('SELECT * FROM api_keys').all();
+    for (const k of keys) {
+      await turso.execute({
+        sql: `INSERT OR REPLACE INTO api_keys
+              (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min, is_active, created_at, last_used_at, expires_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [k.key_hash, k.key_preview, k.name, k.app_identifier, k.channel_id,
+               k.webhook_url, k.webhook_secret, k.rate_limit_per_min, k.is_active,
+               k.created_at, k.last_used_at, k.expires_at],
+      });
+    }
+    const txns = local.prepare('SELECT * FROM transactions').all();
+    for (const t of txns) {
+      await turso.execute({
+        sql: `INSERT OR REPLACE INTO transactions
+              (external_reference, app_identifier, payhero_reference, mpesa_receipt, channel_id,
+               phone_number, amount, status, callback_payload, verified_with_payhero, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [t.external_reference, t.app_identifier, t.payhero_reference, t.mpesa_receipt,
+               t.channel_id, t.phone_number, t.amount, t.status, t.callback_payload,
+               t.verified_with_payhero, t.created_at, t.updated_at],
+      });
+    }
+  } catch (e) {
+    console.error('Periodic flush error:', e.message);
+  }
+}, 30000); // every 30 seconds
