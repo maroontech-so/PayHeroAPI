@@ -591,7 +591,7 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 25000);
-      response = await fetch('https://backend.payhero.co.ke/api/v2/payments/initiate-stk-push', {
+      response = await fetch('https://backend.payhero.co.ke/api/v2/payments', {
         method: 'POST',
         headers: {
           Authorization: getPayHeroAuthHeader(),
