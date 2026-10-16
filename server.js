@@ -15,32 +15,35 @@ const PORT = process.env.PORT || 3000;
 // ============================================================
 // SECURITY: Trust proxy (Render runs behind a load balancer)
 // ============================================================
-app.set('trust proxy', 1); // Exactly one proxy in front (Render's LB)
-app.disable('x-powered-by'); // Don't leak Express
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
 
 // ============================================================
-// SECURITY: Helmet with strict Content Security Policy
+// SECURITY: Helmet with relaxed CSP for inline handlers
 // ============================================================
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"], // Needed for inline scripts and Chart.js
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+      scriptSrcAttr: ["'unsafe-inline'"], // Allows inline onclick handlers
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "https://api.payhero.co.ke", "https://backend.payhero.co.ke"],
+      connectSrc: [
+        "'self'",
+        "https://api.payhero.co.ke",
+        "https://backend.payhero.co.ke",
+        "https://cdn.jsdelivr.net",
+      ],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
-      frameAncestors: ["'none'"], // Clickjacking protection
+      frameAncestors: ["'none'"],
       upgradeInsecureRequests: [],
     },
   },
-  crossOriginEmbedderPolicy: false, // Required for Chart.js
-  hsts: {
-    maxAge: 31536000, // 1 year
-    includeSubDomains: true,
-    preload: true,
-  },
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 
@@ -48,7 +51,7 @@ app.use(helmet({
 // SECURITY: CORS (restrict to your frontend in production)
 // ============================================================
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
   : ['https://payheroapi.onrender.com'];
 
 app.use(cors({
@@ -56,14 +59,18 @@ app.use(cors({
     // Allow requests with no origin (mobile apps, curl, same-origin)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    // In development, allow all
     if (process.env.NODE_ENV !== 'production') return callback(null, true);
-    callback(new Error('Not allowed by CORS'));
+    // Silently reject — do NOT throw, or browser gets confusing 500 + no headers
+    console.warn('CORS blocked origin:', origin);
+    return callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-admin-token', 'x-api-key', 'idempotency-key'],
+  maxAge: 86400,
 }));
+
+app.options('*', cors());
 
 // ============================================================
 // SECURITY: Body size limits (prevent memory exhaustion DoS)
@@ -75,6 +82,18 @@ app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
   etag: true,
 }));
+
+// ============================================================
+// ERROR HANDLING: Custom Error Class
+// ============================================================
+class AppError extends Error {
+  constructor(message, statusCode = 500, isOperational = true) {
+    super(message);
+    this.statusCode = statusCode;
+    this.isOperational = isOperational;
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
 
 // ============================================================
 // LOCAL SQLITE BUFFER
@@ -231,11 +250,29 @@ async function initTursoSchema() {
   `);
 }
 
-function syncToTurso(sql, args = []) {
-  if (!turso || !tursoReady) return;
-  turso.execute({ sql, args }).catch((e) => {
-    console.error('Turso sync error:', e.message, '| sql:', sql.slice(0, 80));
-  });
+async function syncToTurso(sql, args = []) {
+  if (!tursoReady) return;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await turso.execute({ sql, args });
+      return;
+    } catch (e) {
+      if (attempt === 1) {
+        console.error('Turso sync failed after retry:', e.message);
+        return;
+      }
+      // Recreate client on first failure
+      try {
+        turso = createClient({
+          url: process.env.TURSO_DATABASE_URL,
+          authToken: process.env.TURSO_AUTH_TOKEN,
+        });
+      } catch (re) {
+        console.error('Turso client recreation failed:', re.message);
+        return;
+      }
+    }
+  }
 }
 
 async function hydrateFromTurso() {
@@ -284,32 +321,6 @@ async function hydrateFromTurso() {
       if (info.changes) txnCount++;
     }
 
-    // Push local rows not yet in Turso
-    const localKeys = local.prepare('SELECT * FROM api_keys').all();
-    for (const k of localKeys) {
-      syncToTurso(
-        `INSERT OR IGNORE INTO api_keys
-         (key_hash, key_preview, name, app_identifier, channel_id, webhook_url, webhook_secret, rate_limit_per_min, is_active, created_at, last_used_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [k.key_hash, k.key_preview, k.name, k.app_identifier, k.channel_id,
-         k.webhook_url, k.webhook_secret, k.rate_limit_per_min, k.is_active,
-         k.created_at, k.last_used_at, k.expires_at]
-      );
-    }
-
-    const localTxns = local.prepare('SELECT * FROM transactions').all();
-    for (const t of localTxns) {
-      syncToTurso(
-        `INSERT OR IGNORE INTO transactions
-         (external_reference, app_identifier, payhero_reference, mpesa_receipt, channel_id,
-          phone_number, amount, status, callback_payload, verified_with_payhero, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [t.external_reference, t.app_identifier, t.payhero_reference, t.mpesa_receipt,
-         t.channel_id, t.phone_number, t.amount, t.status, t.callback_payload,
-         t.verified_with_payhero, t.created_at, t.updated_at]
-      );
-    }
-
     console.log(`Hydrated from Turso: +${keyCount} keys, +${txnCount} transactions`);
   } catch (e) {
     console.error('Hydration failed:', e.message);
@@ -318,13 +329,14 @@ async function hydrateFromTurso() {
 }
 
 // ============================================================
-// HELPERS
+// HELPERS: Secure Key Generation
 // ============================================================
 function hashKey(key) {
   return crypto.createHash('sha256').update(key).digest('hex');
 }
 
 function generateApiKey() {
+  // 32 bytes = 256 bits of entropy, hex-encoded for safe transport
   return 'phk_' + crypto.randomBytes(32).toString('hex');
 }
 
@@ -377,7 +389,7 @@ function logRequest(apiKeyRecord, req, statusCode) {
 // ============================================================
 // SECURITY: Per-key rate limiter
 // ============================================================
-const keyRateLimits = new Map(); // keyId -> { count, resetAt }
+const keyRateLimits = new Map();
 
 function checkKeyRateLimit(keyRecord) {
   const now = Date.now();
@@ -477,8 +489,8 @@ app.get('/health', (req, res) => {
 
 // Stricter rate limit for login (prevent brute force)
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per 15 min
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   message: { error: 'Too many login attempts. Try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -522,7 +534,6 @@ app.post('/api/admin/keys', adminAuth, (req, res) => {
       return res.status(400).json({ error: 'Name and Channel ID are required' });
     }
 
-    // Validate channel_id format (alphanumeric)
     if (!/^[a-zA-Z0-9_-]{1,50}$/.test(channel_id)) {
       return res.status(400).json({ error: 'Invalid channel_id format' });
     }
@@ -750,10 +761,11 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       [external_reference, req.apiKeyRecord.app_identifier, channelId, phone_number, amount]
     );
 
-    // Call PayHero API
+    // Call PayHero API — with provider field
     const payheroPayload = {
       amount,
       phone_number,
+      provider: 'm-pesa',
       channel_id: channelId,
       external_reference,
       callback_url: callback_url || `${req.protocol}://${req.get('host')}/api/payhero/callback`,
@@ -856,9 +868,6 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
 // ============================================================
 // PAYHERO CALLBACK — SECURITY CRITICAL
 // ============================================================
-// PayHero does NOT sign callbacks. We cannot trust the payload alone.
-// Strategy: always re-query PayHero's status API to verify before
-// marking a transaction as successful.
 app.post('/api/payhero/callback', async (req, res) => {
   const sourceIp = req.ip;
   const payload = req.body;
@@ -900,7 +909,6 @@ app.post('/api/payhero/callback', async (req, res) => {
     }
 
     // SECURITY: Re-query PayHero to verify the actual status
-    // This prevents fake callbacks from marking orders as paid
     let verifiedStatus = null;
     let verifiedWithPayhero = false;
 
@@ -918,7 +926,6 @@ app.post('/api/payhero/callback', async (req, res) => {
       }
     } catch (e) {
       console.error('PayHero verification failed:', e.message);
-      // If verification fails, DO NOT mark as successful
     }
 
     // If we couldn't verify with PayHero, only trust the callback if it's NOT claiming success
@@ -930,11 +937,9 @@ app.post('/api/payhero/callback', async (req, res) => {
     if (verifiedWithPayhero) {
       finalStatus = verifiedStatus;
     } else if (callbackStatus === 'success') {
-      // Callback claims success but we couldn't verify — do NOT trust
       console.warn(`Callback claims success for ${txn.external_reference} but PayHero verification failed. Keeping pending.`);
       finalStatus = 'pending';
     } else {
-      // Non-success callbacks can be trusted (they don't cause harm)
       finalStatus = callbackStatus;
     }
 
@@ -967,9 +972,7 @@ app.post('/api/payhero/callback', async (req, res) => {
       `UPDATE callback_log SET verified = ? WHERE external_reference = ? ORDER BY id DESC LIMIT 1`
     ).run(verifiedWithPayhero ? 1 : 0, txn.external_reference);
 
-    // ============================================================
-    // FORWARD TO APP WEBHOOK (if configured)
-    // ============================================================
+    // Forward to app webhook (if configured)
     const apiKey = local.prepare('SELECT * FROM api_keys WHERE app_identifier = ?').get(txn.app_identifier);
 
     if (apiKey && apiKey.webhook_url) {
@@ -1001,7 +1004,6 @@ app.post('/api/payhero/callback', async (req, res) => {
     res.status(200).json({ status: 'received', verified: verifiedWithPayhero });
   } catch (error) {
     console.error('Callback processing error:', error);
-    // Always return 200 so PayHero doesn't retry indefinitely
     res.status(200).json({ status: 'received_with_error' });
   }
 });
@@ -1021,7 +1023,9 @@ app.use((err, req, res, next) => {
   if (err.message === 'Not allowed by CORS') {
     return res.status(403).json({ error: 'CORS not allowed' });
   }
-  res.status(500).json({ error: 'Internal server error' });
+  const statusCode = err.statusCode || 500;
+  const message = err.isOperational ? err.message : 'Internal server error';
+  res.status(statusCode).json({ error: message });
 });
 
 // ============================================================
@@ -1067,4 +1071,4 @@ setInterval(async () => {
   } catch (e) {
     console.error('Periodic flush error:', e.message);
   }
-}, 30000); // every 30 seconds
+}, 30000);
