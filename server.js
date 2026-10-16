@@ -665,7 +665,7 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
     const { reference } = req.params;
     const channelId = req.apiKeyRecord.channel_id;
 
-    // STEP 1: Find the transaction in our DB by any known identifier
+    // 1. Try to find the transaction locally
     const t = await db(
       `SELECT * FROM transactions
        WHERE external_reference = ?
@@ -674,30 +674,25 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
       [reference, reference, reference]
     );
 
-    if (t.rows.length === 0) {
-      await logRequest(req, req.apiKeyRecord, 404);
-      return res.status(404).json({
-        error: 'Transaction not found',
-        reference,
-        message: 'No transaction with this reference exists in our records.',
-      });
-    }
+    let txn = t.rows.length > 0 ? t.rows[0] : null;
 
-    const txn = t.rows[0];
-
-    // STEP 2: If we already have a verified terminal status, return it
-    if (txn.status !== 'pending' && txn.verified_with_payhero) {
+    // 2. If found and already terminal + verified, return immediately
+    if (txn && txn.status !== 'pending' && txn.verified_with_payhero) {
       await logRequest(req, req.apiKeyRecord, 200);
       return res.json({ source: 'local', transaction: txn });
     }
 
-    // STEP 3: Query PayHero using the CANONICAL external_reference (NOT the client's input)
+    // 3. Determine what reference to use for the PayHero status query
+    //    Prefer the canonical external_reference from DB, else use what the client sent
+    const lookupRef = txn ? txn.external_reference : reference;
+
+    // 4. Query PayHero's status endpoint
     let response, data;
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20000);
       response = await fetch(
-        `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(txn.external_reference)}&channel_id=${encodeURIComponent(channelId)}`,
+        `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(lookupRef)}&channel_id=${encodeURIComponent(channelId)}`,
         {
           headers: { Authorization: getPayHeroAuthHeader() },
           signal: controller.signal,
@@ -707,14 +702,48 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
       data = await response.json().catch(() => ({}));
     } catch (e) {
       console.error('PayHero status fetch error:', e.message);
+      // If PayHero is unreachable but we have a local record, return it
+      if (txn) {
+        await logRequest(req, req.apiKeyRecord, 200);
+        return res.json({ source: 'local', transaction: txn, note: 'PayHero unreachable' });
+      }
       await logRequest(req, req.apiKeyRecord, 502);
-      return res.status(502).json({
-        error: 'PayHero unreachable',
-        message: e.message,
-      });
+      return res.status(502).json({ error: 'PayHero unreachable', message: e.message });
     }
 
     if (!response.ok) {
+      // If PayHero returns 404 and we don't have a local record, try to look up
+      // the transaction by the PayHero reference in our DB one more time
+      if (response.status === 404 && !txn) {
+        // Maybe the client is polling with a PayHero ref we haven't stored yet.
+        // Try searching by any identifier again with a fresh query.
+        const retry = await db(
+          'SELECT * FROM transactions WHERE payhero_reference = ? OR mpesa_receipt = ?',
+          [reference, reference]
+        );
+        if (retry.rows.length > 0) {
+          txn = retry.rows[0];
+          // Re-query PayHero with the canonical external_reference
+          const retryResp = await fetch(
+            `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(txn.external_reference)}&channel_id=${encodeURIComponent(channelId)}`,
+            { headers: { Authorization: getPayHeroAuthHeader() } }
+          );
+          if (retryResp.ok) {
+            const retryData = await retryResp.json().catch(() => ({}));
+            const normalized = normalizeStatus(retryData.status || retryData.Status || retryData.response?.Status);
+            if (normalized !== 'unknown') {
+              await db(
+                `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = CURRENT_TIMESTAMP
+                 WHERE external_reference = ?`,
+                [normalized, txn.external_reference]
+              );
+            }
+            await logRequest(req, req.apiKeyRecord, 200);
+            return res.json({ source: 'payhero', transaction: retryData });
+          }
+        }
+      }
+
       await logRequest(req, req.apiKeyRecord, response.status);
       return res.status(response.status).json({
         error: 'PayHero API error',
@@ -722,28 +751,45 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
       });
     }
 
-    // STEP 4: Update our DB with the verified status
+    // 5. Update local DB if we have a record
     const normalized = normalizeStatus(
       data.status || data.Status || data.response?.Status
     );
 
-    const payheroRef = extractPayheroRef(data) || txn.payhero_reference;
+    const payheroRef = extractPayheroRef(data) || (txn ? txn.payhero_reference : null);
     const mpesaReceipt =
       data.mpesa_receipt ||
       data.response?.MPESA_Reference ||
-      txn.mpesa_receipt;
+      (txn ? txn.mpesa_receipt : null);
 
     if (normalized !== 'unknown') {
-      await db(
-        `UPDATE transactions
-         SET status = ?,
-             verified_with_payhero = 1,
-             payhero_reference = COALESCE(?, payhero_reference),
-             mpesa_receipt = COALESCE(?, mpesa_receipt),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE external_reference = ?`,
-        [normalized, payheroRef || null, mpesaReceipt || null, txn.external_reference]
-      );
+      if (txn) {
+        // Update existing
+        await db(
+          `UPDATE transactions
+           SET status = ?,
+               verified_with_payhero = 1,
+               payhero_reference = COALESCE(?, payhero_reference),
+               mpesa_receipt = COALESCE(?, mpesa_receipt),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE external_reference = ?`,
+          [normalized, payheroRef || null, mpesaReceipt || null, txn.external_reference]
+        );
+      } else {
+        // Insert a record so future polls find it locally
+        try {
+          await db(
+            `INSERT OR IGNORE INTO transactions
+             (external_reference, app_identifier, channel_id, payhero_reference,
+              mpesa_receipt, status, verified_with_payhero, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+            [reference, req.apiKeyRecord.app_identifier, channelId,
+             payheroRef || null, mpesaReceipt || null, normalized]
+          );
+        } catch (e) {
+          console.error('Failed to insert synthetic transaction:', e.message);
+        }
+      }
     }
 
     await logRequest(req, req.apiKeyRecord, 200);
