@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PayHero Central API — Documentation</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='68' font-size='60' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>D</text></svg>" />
+  <title>LyCash — Documentation</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='68' font-size='60' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>L</text></svg>" />
   <style>
     :root {
       --bg: #ffffff;
@@ -41,7 +41,6 @@
       --code-inline-bg: #1e293b;
       --code-inline-text: #f472b6;
     }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-h) + 20px); }
     body {
@@ -54,8 +53,6 @@
     }
     a { color: var(--primary); text-decoration: none; }
     a:hover { text-decoration: underline; }
-
-    /* ============ HEADER ============ */
     .header {
       position: sticky;
       top: 0;
@@ -132,13 +129,7 @@
       place-items: center;
       cursor: pointer;
     }
-
-    /* ============ LAYOUT ============ */
-    .layout {
-      display: flex;
-      max-width: 1400px;
-      margin: 0 auto;
-    }
+    .layout { display: flex; max-width: 1400px; margin: 0 auto; }
     .sidebar {
       width: var(--sidebar-w);
       border-right: 1px solid var(--border);
@@ -149,9 +140,7 @@
       overflow-y: auto;
       flex-shrink: 0;
     }
-    .sidebar-section {
-      margin-bottom: 24px;
-    }
+    .sidebar-section { margin-bottom: 24px; }
     .sidebar-section h4 {
       font-size: 11px;
       font-weight: 700;
@@ -170,23 +159,9 @@
       font-weight: 500;
       text-decoration: none;
     }
-    .sidebar-section a:hover {
-      background: var(--bg-alt);
-      color: var(--text);
-    }
-    .sidebar-section a.active {
-      background: var(--primary-soft);
-      color: var(--primary);
-    }
-
-    .content {
-      flex: 1;
-      min-width: 0;
-      padding: 40px 48px 80px;
-      max-width: 900px;
-    }
-
-    /* ============ TYPOGRAPHY ============ */
+    .sidebar-section a:hover { background: var(--bg-alt); color: var(--text); }
+    .sidebar-section a.active { background: var(--primary-soft); color: var(--primary); }
+    .content { flex: 1; min-width: 0; padding: 40px 48px 80px; max-width: 900px; }
     h1 {
       font-size: 32px;
       font-weight: 800;
@@ -204,30 +179,14 @@
       line-height: 1.3;
     }
     h2:first-of-type { border-top: none; padding-top: 0; margin-top: 40px; }
-    h3 {
-      font-size: 18px;
-      font-weight: 700;
-      margin: 32px 0 12px;
-      line-height: 1.3;
-    }
-    h4 {
-      font-size: 15px;
-      font-weight: 700;
-      margin: 24px 0 8px;
-    }
+    h3 { font-size: 18px; font-weight: 700; margin: 32px 0 12px; line-height: 1.3; }
+    h4 { font-size: 15px; font-weight: 700; margin: 24px 0 8px; }
     p { margin-bottom: 16px; }
     ul, ol { margin: 0 0 16px 24px; }
     li { margin-bottom: 6px; }
     strong { font-weight: 700; }
     em { font-style: italic; }
-
-    .lead {
-      font-size: 17px;
-      color: var(--text-muted);
-      margin-bottom: 32px;
-    }
-
-    /* ============ CODE ============ */
+    .lead { font-size: 17px; color: var(--text-muted); margin-bottom: 32px; }
     code {
       background: var(--code-inline-bg);
       color: var(--code-inline-text);
@@ -249,12 +208,7 @@
       position: relative;
       border: 1px solid #0f172a;
     }
-    pre code {
-      background: transparent;
-      color: inherit;
-      padding: 0;
-      font-size: inherit;
-    }
+    pre code { background: transparent; color: inherit; padding: 0; font-size: inherit; }
     .code-header {
       display: flex;
       align-items: center;
@@ -270,10 +224,7 @@
       border-bottom: none;
       margin-top: 16px;
     }
-    .code-header + pre {
-      margin-top: 0;
-      border-radius: 0 0 var(--radius) var(--radius);
-    }
+    .code-header + pre { margin-top: 0; border-radius: 0 0 var(--radius) var(--radius); }
     .copy-btn {
       background: transparent;
       color: #94a3b8;
@@ -286,13 +237,7 @@
       font-weight: 500;
     }
     .copy-btn:hover { background: #1e293b; color: #e2e8f0; }
-    .copy-btn.copied {
-      background: #065f46;
-      color: #a7f3d0;
-      border-color: #065f46;
-    }
-
-    /* ============ CALLOUTS ============ */
+    .copy-btn.copied { background: #065f46; color: #a7f3d0; border-color: #065f46; }
     .callout {
       padding: 14px 18px;
       border-radius: var(--radius);
@@ -301,39 +246,17 @@
       font-size: 14px;
     }
     .callout p:last-child { margin-bottom: 0; }
-    .callout.info {
-      background: #eff6ff;
-      border-color: #3b82f6;
-      color: #1e40af;
-    }
-    .callout.warn {
-      background: #fffbeb;
-      border-color: #f59e0b;
-      color: #92400e;
-    }
-    .callout.success {
-      background: #ecfdf5;
-      border-color: #10b981;
-      color: #065f46;
-    }
-    .callout.danger {
-      background: #fef2f2;
-      border-color: #ef4444;
-      color: #991b1b;
-    }
+    .callout.info { background: #eff6ff; border-color: #3b82f6; color: #1e40af; }
+    .callout.warn { background: #fffbeb; border-color: #f59e0b; color: #92400e; }
+    .callout.success { background: #ecfdf5; border-color: #10b981; color: #065f46; }
+    .callout.danger { background: #fef2f2; border-color: #ef4444; color: #991b1b; }
     [data-theme="dark"] .callout.info { background: #172554; color: #bfdbfe; }
     [data-theme="dark"] .callout.warn { background: #451a03; color: #fde68a; }
     [data-theme="dark"] .callout.success { background: #022c22; color: #a7f3d0; }
     [data-theme="dark"] .callout.danger { background: #450a0a; color: #fecaca; }
     .callout strong { display: block; margin-bottom: 4px; }
-
-    /* ============ TABLES ============ */
     .table-wrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--border); border-radius: var(--radius); }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13.5px;
-    }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
     th, td {
       text-align: left;
       padding: 11px 14px;
@@ -349,8 +272,6 @@
       color: var(--text-muted);
     }
     tr:last-child td { border-bottom: none; }
-
-    /* ============ BADGES ============ */
     .badge {
       display: inline-block;
       padding: 2px 8px;
@@ -369,8 +290,6 @@
     [data-theme="dark"] .badge.post { background: #14532d; color: #bbf7d0; }
     [data-theme="dark"] .badge.patch { background: #78350f; color: #fde68a; }
     [data-theme="dark"] .badge.delete { background: #7f1d1d; color: #fecaca; }
-
-    /* ============ ENDPOINT BLOCK ============ */
     .endpoint {
       display: flex;
       align-items: center;
@@ -385,8 +304,6 @@
       flex-wrap: wrap;
     }
     .endpoint .path { font-weight: 600; }
-
-    /* ============ PROMPT BOX ============ */
     .prompt-box {
       background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
       border-radius: 16px;
@@ -397,17 +314,8 @@
     [data-theme="dark"] .prompt-box {
       background: linear-gradient(135deg, #312e81 0%, #4c1d95 100%);
     }
-    .prompt-box h3 {
-      color: white;
-      margin-top: 0;
-      font-size: 20px;
-      margin-bottom: 8px;
-    }
-    .prompt-box p {
-      opacity: 0.9;
-      margin-bottom: 16px;
-      font-size: 14.5px;
-    }
+    .prompt-box h3 { color: white; margin-top: 0; font-size: 20px; margin-bottom: 8px; }
+    .prompt-box p { opacity: 0.9; margin-bottom: 16px; font-size: 14.5px; }
     .prompt-box .btn {
       display: inline-flex;
       align-items: center;
@@ -423,8 +331,6 @@
       font-family: inherit;
     }
     .prompt-box .btn:hover { background: #f3f4f6; }
-
-    /* ============ FOOTER ============ */
     .footer {
       border-top: 1px solid var(--border);
       padding: 32px 48px;
@@ -433,8 +339,6 @@
       font-size: 13px;
       margin-top: 60px;
     }
-
-    /* ============ RESPONSIVE ============ */
     .sidebar-overlay {
       display: none;
       position: fixed;
@@ -442,7 +346,6 @@
       background: rgba(0,0,0,0.4);
       z-index: 90;
     }
-
     @media (max-width: 960px) {
       .header-nav { display: none; }
       .menu-btn { display: grid; }
@@ -463,8 +366,6 @@
       h2 { font-size: 20px; }
       h3 { font-size: 16px; }
     }
-
-    /* Anchor link scroll highlight */
     .content h2, .content h3 { position: relative; }
     .content h2::before, .content h3::before {
       content: '';
@@ -482,9 +383,9 @@
   <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
   </button>
-  <a href="#" class="brand">
-    <div class="brand-mark">P</div>
-    PayHero Central API
+  <a href="/" class="brand">
+    <div class="brand-mark">L</div>
+    LyCash
   </a>
   <nav class="header-nav">
     <a href="/">Dashboard</a>
@@ -502,7 +403,6 @@
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
 <div class="layout">
-  <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-section">
       <h4>Getting Started</h4>
@@ -514,7 +414,7 @@
     <div class="sidebar-section">
       <h4>Core Concepts</h4>
       <a href="#flow" class="nav-link">Payment Flow</a>
-      <a href="#references" class="nav-link">References & IDs</a>
+      <a href="#references" class="nav-link">References &amp; IDs</a>
       <a href="#statuses" class="nav-link">Transaction Statuses</a>
       <a href="#errors" class="nav-link">Error Codes</a>
     </div>
@@ -529,28 +429,26 @@
       <h4>Integration</h4>
       <a href="#examples" class="nav-link">Code Examples</a>
       <a href="#security" class="nav-link">Security Best Practices</a>
-      <a href="#testing" class="nav-link">Testing & Debugging</a>
+      <a href="#testing" class="nav-link">Testing &amp; Debugging</a>
       <a href="#llm-prompt" class="nav-link">LLM Prompt</a>
     </div>
   </aside>
 
-  <!-- ============ CONTENT ============ -->
   <main class="content">
 
-    <h1>PayHero Central API</h1>
+    <h1>LyCash</h1>
     <p class="lead">
-      A single, secure HTTP API for M-PESA STK Push payments via PayHero. Integrate once, use across every app, and manage all payments from one dashboard.
+      A single, secure HTTP API for M-PESA STK Push payments. Integrate once, use across every app, and manage all payments from one dashboard.
     </p>
 
-    <!-- ============ OVERVIEW ============ -->
     <h2 id="overview">Overview</h2>
     <p>
-      PayHero Central API is a middleware server that sits between your applications and PayHero. Instead of embedding PayHero credentials in every app you build, you embed this single API's URL and an API key. This server handles:
+      LyCash is a middleware server that sits between your applications and the upstream M-PESA gateway. Instead of embedding gateway credentials in every app you build, you embed LyCash's URL and an API key. This server handles:
     </p>
     <ul>
-      <li>Secure credential storage (PayHero username, password, and channels stay on the server)</li>
+      <li>Secure credential storage (gateway username, password, and channels stay on the server)</li>
       <li>Per-app API key generation and revocation</li>
-      <li>STK Push initiation to Safaricom M-PESA via PayHero</li>
+      <li>STK Push initiation to Safaricom M-PESA via the upstream gateway</li>
       <li>Real-time transaction status polling</li>
       <li>Webhook receiving and forwarding to your apps</li>
       <li>Complete audit logging of every request and callback</li>
@@ -562,12 +460,15 @@
       Build 2 apps or 200 — they all point to the same endpoint with different keys. Add a new app by generating a key, no server changes needed.
     </div>
 
-    <!-- ============ ARCHITECTURE ============ -->
+    <p style="margin-top:16px;font-size:12.5px;color:var(--text-muted);">
+      LyCash is a payment orchestration API. It uses PayHero as its upstream M-PESA gateway. LyCash is not affiliated with or endorsed by PayHero.
+    </p>
+
     <h2 id="architecture">Architecture</h2>
     <p>Here's how a payment flows through the system:</p>
     <pre><code>┌─────────────┐        ┌──────────────────────┐        ┌──────────┐
-│  Your App   │──(1)──▶│ PayHero Central API  │──(2)──▶│ PayHero  │
-│ (frontend)  │        │ payheroapi.onrender  │        │  v2 API  │
+│  Your App   │──(1)──▶│       LyCash         │──(2)──▶│ Gateway  │
+│ (frontend)  │        │  lycash.onrender.com │        │ v2 API   │
 └─────────────┘        └──────────────────────┘        └──────────┘
       ▲                        │                             │
       │                        │(3) STK prompt sent          │
@@ -581,19 +482,18 @@
       │                        │(4) Callback sent ───────────┘
       │                        ▼
       │                  ┌──────────────────────┐
-      │◀───(5) poll──────│ PayHero Central API  │
+      │◀───(5) poll──────│       LyCash         │
       │                  │  (updates DB)        │
       │                  └──────────────────────┘</code></pre>
 
     <ol>
-      <li><strong>Your app calls our API</strong> with the customer's phone number and amount.</li>
-      <li><strong>Our server calls PayHero</strong> using its stored credentials and the channel assigned to your API key.</li>
-      <li><strong>PayHero pushes an STK prompt</strong> to the customer's phone via Safaricom M-PESA.</li>
-      <li><strong>PayHero sends us a callback</strong> when the customer enters (or fails to enter) their PIN.</li>
-      <li><strong>Your app polls our status endpoint</strong> (or receives a webhook) to know the result.</li>
+      <li><strong>Your app calls LyCash</strong> with the customer's phone number and amount.</li>
+      <li><strong>LyCash calls the upstream gateway</strong> using its stored credentials and the channel assigned to your API key.</li>
+      <li><strong>The gateway pushes an STK prompt</strong> to the customer's phone via Safaricom M-PESA.</li>
+      <li><strong>The gateway sends LyCash a callback</strong> when the customer enters (or fails to enter) their PIN.</li>
+      <li><strong>Your app polls LyCash's status endpoint</strong> (or receives a webhook) to know the result.</li>
     </ol>
 
-    <!-- ============ QUICK START ============ -->
     <h2 id="quickstart">Quick Start</h2>
     <p>Five minutes from zero to a working STK push:</p>
 
@@ -603,11 +503,11 @@
     </p>
     <ul>
       <li><strong>Application Name</strong> — e.g. "Shop App" (just for your reference)</li>
-      <li><strong>PayHero Channel ID</strong> — the numeric channel ID from your PayHero dashboard</li>
+      <li><strong>Channel ID</strong> — the numeric channel ID from your gateway dashboard</li>
       <li><strong>Webhook URL (optional)</strong> — the URL in your app that should receive payment callbacks</li>
     </ul>
     <p>
-      Copy the generated key immediately. It looks like <code>phk_...</code> and will <strong>not be shown again</strong>.
+      Copy the generated key immediately. It looks like <code>lyc_...</code> and will <strong>not be shown again</strong>.
     </p>
 
     <div class="callout warn">
@@ -622,9 +522,9 @@
       <span>cURL</span>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
-    <pre><code>curl -X POST https://payheroapi.onrender.com/api/pay/stk-push \
+    <pre><code>curl -X POST https://lycash.onrender.com/api/pay/stk-push \
   -H "Content-Type: application/json" \
-  -H "x-api-key: phk_YOUR_KEY_HERE" \
+  -H "x-api-key: lyc_YOUR_KEY_HERE" \
   -d '{
     "phone_number": "254708765597",
     "amount": 100,
@@ -640,7 +540,7 @@
     <pre><code>{
   "success": true,
   "external_reference": "order_001",
-  "payhero_response": {
+  "gateway_response": {
     "success": true,
     "status": "QUEUED",
     "reference": "459f-4830-826e-468950aa6264260747",
@@ -658,8 +558,8 @@
       <span>cURL</span>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
-    <pre><code>curl -H "x-api-key: phk_YOUR_KEY_HERE" \
-  https://payheroapi.onrender.com/api/pay/status/order_001</code></pre>
+    <pre><code>curl -H "x-api-key: lyc_YOUR_KEY_HERE" \
+  https://lycash.onrender.com/api/pay/status/order_001</code></pre>
 
     <p>When the customer completes payment, you'll see:</p>
 
@@ -679,7 +579,6 @@
   }
 }</code></pre>
 
-    <!-- ============ AUTH ============ -->
     <h2 id="auth">Authentication</h2>
     <p>
       Every API request must include an <code>x-api-key</code> header containing a valid key from your admin dashboard:
@@ -689,7 +588,7 @@
       <span>Header</span>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
-    <pre><code>x-api-key: phk_a1b2c3d4e5f6...</code></pre>
+    <pre><code>x-api-key: lyc_a1b2c3d4e5f6...</code></pre>
 
     <p>
       You can also pass the key as a query string parameter (<code>?api_key=...</code>) for testing, but the header is preferred.
@@ -699,16 +598,13 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr>
-            <th>Property</th>
-            <th>Value</th>
-          </tr>
+          <tr><th>Property</th><th>Value</th></tr>
         </thead>
         <tbody>
-          <tr><td>Format</td><td><code>phk_</code> + 64 hex characters</td></tr>
+          <tr><td>Format</td><td><code>lyc_</code> + 64 hex characters</td></tr>
           <tr><td>Entropy</td><td>256 bits (cryptographically random)</td></tr>
           <tr><td>Storage</td><td>SHA-256 hashed — plaintext never stored on our servers</td></tr>
-          <tr><td>Scope</td><td>Bound to one PayHero channel per key</td></tr>
+          <tr><td>Scope</td><td>Bound to one channel per key</td></tr>
           <tr><td>Rate limit</td><td>100 requests/minute (configurable per key)</td></tr>
           <tr><td>Rotation</td><td>Revoke anytime from the dashboard; create a new one</td></tr>
         </tbody>
@@ -720,17 +616,16 @@
       For web apps, always make API calls from your backend. For static sites, use a serverless function as a proxy. If a key is leaked, revoke it immediately from the dashboard.
     </div>
 
-    <!-- ============ FLOW ============ -->
     <h2 id="flow">Payment Flow</h2>
     <p>The recommended client-side flow for a typical checkout:</p>
 
     <ol>
       <li>User enters phone number and confirms amount on your app.</li>
       <li>Your app <code>POST</code>s to <code>/api/pay/stk-push</code> with the phone, amount, and a unique <code>external_reference</code>.</li>
-      <li>Our API forwards the request to PayHero, stores a <code>pending</code> transaction, and returns PayHero's reference IDs.</li>
-      <li>PayHero sends an STK prompt to the customer's phone.</li>
+      <li>LyCash forwards the request to the gateway, stores a <code>pending</code> transaction, and returns the gateway's reference IDs.</li>
+      <li>The gateway sends an STK prompt to the customer's phone.</li>
       <li>Your app <strong>polls</strong> <code>GET /api/pay/status/:reference</code> every 2–3 seconds, up to 2 minutes.</li>
-      <li>When the customer enters their PIN, PayHero sends a callback to our server. Our server verifies the status with PayHero, updates the transaction, and — if your key has a webhook URL — forwards a signed POST to your app.</li>
+      <li>When the customer enters their PIN, the gateway sends a callback to LyCash. LyCash verifies the status, updates the transaction, and — if your key has a webhook URL — forwards a signed POST to your app.</li>
       <li>Your app's poll sees <code>success</code> (with M-PESA receipt) or <code>failed</code> (with reason) and shows the result to the user.</li>
     </ol>
 
@@ -739,47 +634,20 @@
       Polling is simpler to implement and works everywhere. Webhooks are more efficient for high-volume apps. You can use both: webhooks for server-side order fulfillment, polling for the customer-facing UI.
     </div>
 
-    <!-- ============ REFERENCES ============ -->
     <h2 id="references">References &amp; IDs</h2>
-    <p>
-      A single payment has several identifiers. Understanding them prevents most integration bugs.
-    </p>
+    <p>A single payment has several identifiers. Understanding them prevents most integration bugs.</p>
 
     <div class="table-wrap">
       <table>
         <thead>
-          <tr>
-            <th>Identifier</th>
-            <th>Where it comes from</th>
-            <th>Best use</th>
-          </tr>
+          <tr><th>Identifier</th><th>Where it comes from</th><th>Best use</th></tr>
         </thead>
         <tbody>
-          <tr>
-            <td><code>external_reference</code></td>
-            <td>You generate it (must be unique)</td>
-            <td>Idempotency; primary lookup</td>
-          </tr>
-          <tr>
-            <td><code>reference</code></td>
-            <td>PayHero response</td>
-            <td>Fallback lookup</td>
-          </tr>
-          <tr>
-            <td><code>CheckoutRequestID</code></td>
-            <td>PayHero response (e.g. <code>ws_CO_...</code>)</td>
-            <td>Fallback lookup</td>
-          </tr>
-          <tr>
-            <td><code>MerchantRequestID</code></td>
-            <td>PayHero callback</td>
-            <td>Fallback lookup in webhook handler</td>
-          </tr>
-          <tr>
-            <td><code>mpesa_receipt</code></td>
-            <td>After successful payment (e.g. <code>UJGD7B29B0</code>)</td>
-            <td>Customer-facing receipt</td>
-          </tr>
+          <tr><td><code>external_reference</code></td><td>You generate it (must be unique)</td><td>Idempotency; primary lookup</td></tr>
+          <tr><td><code>reference</code></td><td>Gateway response</td><td>Fallback lookup</td></tr>
+          <tr><td><code>CheckoutRequestID</code></td><td>Gateway response (e.g. <code>ws_CO_...</code>)</td><td>Fallback lookup</td></tr>
+          <tr><td><code>MerchantRequestID</code></td><td>Gateway callback</td><td>Fallback lookup in webhook handler</td></tr>
+          <tr><td><code>mpesa_receipt</code></td><td>After successful payment (e.g. <code>UJGD7B29B0</code>)</td><td>Customer-facing receipt</td></tr>
         </tbody>
       </table>
     </div>
@@ -791,7 +659,7 @@
 
     <h3>Idempotency</h3>
     <p>
-      The <code>external_reference</code> is unique across all your transactions. If you <code>POST</code> an STK push with a reference that already exists, our API returns the original transaction (with <code>idempotent: true</code>) instead of initiating a new charge.
+      The <code>external_reference</code> is unique across all your transactions. If you <code>POST</code> an STK push with a reference that already exists, LyCash returns the original transaction (with <code>idempotent: true</code>) instead of initiating a new charge.
     </p>
 
     <div class="code-header">
@@ -805,54 +673,26 @@
   "transaction": { ... existing record ... }
 }</code></pre>
 
-    <p>
-      This means your app can safely retry on network failures. Just use the same <code>external_reference</code>.
-    </p>
+    <p>This means your app can safely retry on network failures. Just use the same <code>external_reference</code>.</p>
 
-    <!-- ============ STATUSES ============ -->
     <h2 id="statuses">Transaction Statuses</h2>
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>Status</th>
-            <th>Meaning</th>
-            <th>What to do</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Status</th><th>Meaning</th><th>What to do</th></tr></thead>
         <tbody>
-          <tr>
-            <td><code>pending</code></td>
-            <td>STK push sent, waiting for customer to enter PIN</td>
-            <td>Keep polling</td>
-          </tr>
-          <tr>
-            <td><code>success</code></td>
-            <td>Payment completed, M-PESA receipt issued</td>
-            <td>Fulfill the order</td>
-          </tr>
-          <tr>
-            <td><code>failed</code></td>
-            <td>Payment failed — customer cancelled, insufficient funds, timeout, etc.</td>
-            <td>Show reason, allow retry</td>
-          </tr>
+          <tr><td><code>pending</code></td><td>STK push sent, waiting for customer to enter PIN</td><td>Keep polling</td></tr>
+          <tr><td><code>success</code></td><td>Payment completed, M-PESA receipt issued</td><td>Fulfill the order</td></tr>
+          <tr><td><code>failed</code></td><td>Payment failed — customer cancelled, insufficient funds, timeout, etc.</td><td>Show reason, allow retry</td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- ============ ERRORS ============ -->
     <h2 id="errors">Error Codes</h2>
-    <p>Our API returns standard HTTP status codes with JSON error bodies.</p>
+    <p>LyCash returns standard HTTP status codes with JSON error bodies.</p>
 
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>HTTP</th>
-            <th>Meaning</th>
-            <th>Common cause</th>
-          </tr>
-        </thead>
+        <thead><tr><th>HTTP</th><th>Meaning</th><th>Common cause</th></tr></thead>
         <tbody>
           <tr><td>400</td><td>Bad Request</td><td>Missing field, wrong phone format, invalid amount</td></tr>
           <tr><td>401</td><td>Unauthorized</td><td>No <code>x-api-key</code> header</td></tr>
@@ -860,23 +700,17 @@
           <tr><td>404</td><td>Not Found</td><td>Transaction with that reference doesn't exist</td></tr>
           <tr><td>429</td><td>Rate Limited</td><td>Exceeded 100 requests/minute</td></tr>
           <tr><td>500</td><td>Server Error</td><td>Unexpected — check server logs</td></tr>
-          <tr><td>502</td><td>Bad Gateway</td><td>PayHero is unreachable</td></tr>
+          <tr><td>502</td><td>Bad Gateway</td><td>Upstream gateway is unreachable</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>PayHero result codes</h3>
-    <p>When a payment fails, the callback contains a <code>ResultCode</code> from PayHero/Safaricom. The most common ones:</p>
+    <h3>Gateway result codes</h3>
+    <p>When a payment fails, the callback contains a <code>ResultCode</code> from the upstream gateway / Safaricom. The most common ones:</p>
 
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>Code</th>
-            <th>Meaning</th>
-            <th>User-facing message</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Code</th><th>Meaning</th><th>User-facing message</th></tr></thead>
         <tbody>
           <tr><td>0</td><td>Success</td><td>"Payment received"</td></tr>
           <tr><td>1</td><td>Insufficient balance</td><td>"Your M-PESA balance is too low"</td></tr>
@@ -887,11 +721,9 @@
       </table>
     </div>
 
-    <!-- ============ ENDPOINTS ============ -->
     <h2 id="endpoints">API Reference</h2>
-    <p>All endpoints return JSON. The base URL is <code>https://payheroapi.onrender.com</code>.</p>
+    <p>All endpoints return JSON. The base URL is <code>https://lycash.onrender.com</code>.</p>
 
-    <!-- ============ STK PUSH ============ -->
     <h3 id="ep-stk">Initiate STK Push</h3>
     <div class="endpoint">
       <span class="badge post">POST</span>
@@ -922,24 +754,9 @@
             <td>Yes</td>
             <td>Customer phone in any Kenyan format: <code>0708765597</code>, <code>254708765597</code>, or <code>+254708765597</code>. Normalized to <code>254XXXXXXXXX</code>.</td>
           </tr>
-          <tr>
-            <td><code>amount</code></td>
-            <td>number</td>
-            <td>Yes</td>
-            <td>Amount in KES. Between 1 and 500,000.</td>
-          </tr>
-          <tr>
-            <td><code>external_reference</code></td>
-            <td>string</td>
-            <td>Yes</td>
-            <td>Your unique ID for this payment. Max 100 chars. Must be unique per transaction.</td>
-          </tr>
-          <tr>
-            <td><code>callback_url</code></td>
-            <td>string</td>
-            <td>No</td>
-            <td>Override the default callback URL. Must be HTTPS.</td>
-          </tr>
+          <tr><td><code>amount</code></td><td>number</td><td>Yes</td><td>Amount in KES. Between 1 and 500,000.</td></tr>
+          <tr><td><code>external_reference</code></td><td>string</td><td>Yes</td><td>Your unique ID for this payment. Max 100 chars. Must be unique per transaction.</td></tr>
+          <tr><td><code>callback_url</code></td><td>string</td><td>No</td><td>Override the default callback URL. Must be HTTPS.</td></tr>
         </tbody>
       </table>
     </div>
@@ -949,11 +766,11 @@
       <span>JavaScript (fetch)</span>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
-    <pre><code>const res = await fetch('https://payheroapi.onrender.com/api/pay/stk-push', {
+    <pre><code>const res = await fetch('https://lycash.onrender.com/api/pay/stk-push', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'x-api-key': 'phk_YOUR_KEY_HERE',
+    'x-api-key': 'lyc_YOUR_KEY_HERE',
   },
   body: JSON.stringify({
     phone_number: '254708765597',
@@ -973,7 +790,7 @@ console.log(data);</code></pre>
     <pre><code>{
   "success": true,
   "external_reference": "order_1792148000",
-  "payhero_response": {
+  "gateway_response": {
     "success": true,
     "status": "QUEUED",
     "reference": "459f-4830-826e-468950aa6264260747",
@@ -982,7 +799,6 @@ console.log(data);</code></pre>
   }
 }</code></pre>
 
-    <!-- ============ STATUS ============ -->
     <h3 id="ep-status">Query Transaction Status</h3>
     <div class="endpoint">
       <span class="badge get">GET</span>
@@ -990,7 +806,7 @@ console.log(data);</code></pre>
     </div>
 
     <p>
-      Returns the current status of a transaction. The <code>:reference</code> can be any of the transaction's identifiers — <code>external_reference</code>, PayHero's <code>reference</code>, <code>CheckoutRequestID</code>, or <code>mpesa_receipt</code>.
+      Returns the current status of a transaction. The <code>:reference</code> can be any of the transaction's identifiers — <code>external_reference</code>, the gateway's <code>reference</code>, <code>CheckoutRequestID</code>, or <code>mpesa_receipt</code>.
     </p>
 
     <h4>Headers</h4>
@@ -1007,8 +823,8 @@ console.log(data);</code></pre>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
     <pre><code>const res = await fetch(
-  'https://payheroapi.onrender.com/api/pay/status/order_1792148000',
-  { headers: { 'x-api-key': 'phk_YOUR_KEY_HERE' } }
+  'https://lycash.onrender.com/api/pay/status/order_1792148000',
+  { headers: { 'x-api-key': 'lyc_YOUR_KEY_HERE' } }
 );
 const data = await res.json();
 console.log(data.transaction.status); // 'pending' | 'success' | 'failed'</code></pre>
@@ -1019,7 +835,7 @@ console.log(data.transaction.status); // 'pending' | 'success' | 'failed'</code>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
     <pre><code>{
-  "source": "payhero",
+  "source": "gateway",
   "transaction": {
     "status": "QUEUED",
     "external_reference": "order_1792148000",
@@ -1046,10 +862,9 @@ console.log(data.transaction.status); // 'pending' | 'success' | 'failed'</code>
   }
 }</code></pre>
 
-    <!-- ============ WEBHOOKS ============ -->
     <h3 id="webhooks">Webhooks (Optional)</h3>
     <p>
-      If your API key has a webhook URL configured, we forward every payment outcome to it. This is faster than polling — you get notified the instant PayHero's callback arrives.
+      If your API key has a webhook URL configured, LyCash forwards every payment outcome to it. This is faster than polling — you get notified the instant the gateway's callback arrives.
     </p>
 
     <h4>Webhook payload</h4>
@@ -1060,7 +875,7 @@ console.log(data.transaction.status); // 'pending' | 'success' | 'failed'</code>
     <pre><code>{
   "event": "payment.success",
   "external_reference": "order_1792148000",
-  "payhero_reference": "459f-4830-826e-468950aa6264260747",
+  "gateway_reference": "459f-4830-826e-468950aa6264260747",
   "mpesa_receipt": "UJGD7B29B0",
   "amount": 100,
   "phone_number": "254708765597",
@@ -1074,8 +889,8 @@ console.log(data.transaction.status); // 'pending' | 'success' | 'failed'</code>
       <table>
         <thead><tr><th>Header</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td><code>X-PayHero-Signature</code></td><td>HMAC-SHA256 of the payload using your webhook secret</td></tr>
-          <tr><td><code>X-PayHero-Event</code></td><td>e.g. <code>payment.success</code></td></tr>
+          <tr><td><code>X-LyCash-Signature</code></td><td>HMAC-SHA256 of the payload using your webhook secret</td></tr>
+          <tr><td><code>X-LyCash-Event</code></td><td>e.g. <code>payment.success</code></td></tr>
         </tbody>
       </table>
     </div>
@@ -1088,7 +903,7 @@ console.log(data.transaction.status); // 'pending' | 'success' | 'failed'</code>
     <pre><code>const crypto = require('crypto');
 
 app.post('/your-webhook', (req, res) => {
-  const signature = req.headers['x-payhero-signature'];
+  const signature = req.headers['x-lycash-signature'];
   const expected = crypto
     .createHmac('sha256', process.env.WEBHOOK_SECRET)
     .update(JSON.stringify(req.body))
@@ -1111,7 +926,6 @@ app.post('/your-webhook', (req, res) => {
       Webhook endpoints are public. Anyone can POST to them. Verify the signature before trusting the payload.
     </div>
 
-    <!-- ============ EXAMPLES ============ -->
     <h2 id="examples">Code Examples</h2>
 
     <h3>Node.js / Express backend</h3>
@@ -1119,8 +933,8 @@ app.post('/your-webhook', (req, res) => {
       <span>Node.js</span>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
-    <pre><code>const API_KEY = process.env.PAYHERO_CENTRAL_KEY;
-const API_BASE = 'https://payheroapi.onrender.com';
+    <pre><code>const API_KEY = process.env.LYCASH_API_KEY;
+const API_BASE = 'https://lycash.onrender.com';
 
 async function initiatePayment(phone, amount, reference) {
   const res = await fetch(`${API_BASE}/api/pay/stk-push`, {
@@ -1160,8 +974,8 @@ async function checkStatus(reference) {
     <pre><code>import os
 import requests
 
-API_KEY = os.environ['PAYHERO_CENTRAL_KEY']
-API_BASE = 'https://payheroapi.onrender.com'
+API_KEY = os.environ['LYCASH_API_KEY']
+API_BASE = 'https://lycash.onrender.com'
 
 def initiate_payment(phone, amount, reference):
     res = requests.post(
@@ -1193,8 +1007,8 @@ def check_status(reference):
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
     <pre><code>&lt;?php
-$API_KEY = getenv('PAYHERO_CENTRAL_KEY');
-$API_BASE = 'https://payheroapi.onrender.com';
+$API_KEY = getenv('LYCASH_API_KEY');
+$API_BASE = 'https://lycash.onrender.com';
 
 function initiatePayment($phone, $amount, $reference) {
     global $API_KEY, $API_BASE;
@@ -1227,11 +1041,11 @@ function initiatePayment($phone, $amount, $reference) {
 async function pay(phone, amount) {
   const reference = 'web_' + Date.now();
 
-  const res = await fetch('https://payheroapi.onrender.com/api/pay/stk-push', {
+  const res = await fetch('https://lycash.onrender.com/api/pay/stk-push', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': 'phk_YOUR_KEY_HERE', // ⚠️ Exposed — OK for testing only
+      'x-api-key': 'lyc_YOUR_KEY_HERE', // ⚠️ Exposed — OK for testing only
     },
     body: JSON.stringify({
       phone_number: phone,
@@ -1246,11 +1060,10 @@ async function pay(phone, amount) {
     return;
   }
 
-  // Poll every 3 seconds
   const interval = setInterval(async () =&gt; {
     const s = await fetch(
-      'https://payheroapi.onrender.com/api/pay/status/' + reference,
-      { headers: { 'x-api-key': 'phk_YOUR_KEY_HERE' } }
+      'https://lycash.onrender.com/api/pay/status/' + reference,
+      { headers: { 'x-api-key': 'lyc_YOUR_KEY_HERE' } }
     ).then(r =&gt; r.json());
 
     const status = s.transaction?.status;
@@ -1263,7 +1076,6 @@ async function pay(phone, amount) {
     }
   }, 3000);
 
-  // Give up after 2 minutes
   setTimeout(() =&gt; clearInterval(interval), 120000);
 }
 &lt;/script&gt;</code></pre>
@@ -1273,19 +1085,17 @@ async function pay(phone, amount) {
       Anyone can view source. Proxy requests through your own backend or a serverless function instead.
     </div>
 
-    <!-- ============ SECURITY ============ -->
     <h2 id="security">Security Best Practices</h2>
 
     <ul>
-      <li><strong>Never expose API keys</strong> — Call our API from your backend. If you need to call from a browser, use a serverless proxy (Netlify Functions, Cloudflare Workers, Vercel Functions).</li>
+      <li><strong>Never expose API keys</strong> — Call LyCash from your backend. If you need to call from a browser, use a serverless proxy (Netlify Functions, Cloudflare Workers, Vercel Functions).</li>
       <li><strong>Use unique external references</strong> — Include a timestamp or UUID. This prevents accidental duplicate charges.</li>
-      <li><strong>Verify webhook signatures</strong> — Always validate <code>X-PayHero-Signature</code> before trusting a webhook payload.</li>
+      <li><strong>Verify webhook signatures</strong> — Always validate <code>X-LyCash-Signature</code> before trusting a webhook payload.</li>
       <li><strong>Rotate keys regularly</strong> — Create a new key and revoke the old one if a team member leaves or a key is suspect.</li>
       <li><strong>Bind keys to specific apps</strong> — One key per app. If one key leaks, only that app is affected.</li>
       <li><strong>Monitor your dashboard</strong> — Unusual transaction patterns or spikes in 403s indicate a compromised key.</li>
     </ul>
 
-    <!-- ============ TESTING ============ -->
     <h2 id="testing">Testing &amp; Debugging</h2>
 
     <h3>Test phone numbers</h3>
@@ -1311,13 +1121,13 @@ async function pay(phone, amount) {
           </tr>
           <tr>
             <td>Callback never arrives</td>
-            <td>Callback URL not registered with PayHero</td>
-            <td>Set it in PayHero dashboard → Update Account</td>
+            <td>Callback URL not registered with the gateway</td>
+            <td>Set it in the gateway's dashboard → Update Account</td>
           </tr>
           <tr>
             <td>Status stays "pending"</td>
             <td>Customer hasn't entered PIN yet, or callback lost</td>
-            <td>Wait 2 minutes; then check PayHero dashboard directly</td>
+            <td>Wait 2 minutes; then check the gateway's dashboard directly</td>
           </tr>
           <tr>
             <td>ResultCode 1037</td>
@@ -1330,16 +1140,15 @@ async function pay(phone, amount) {
 
     <h3>Debugging checklist</h3>
     <ol>
-      <li>Check <a href="/health">/health</a> — confirms server and Turso are up</li>
+      <li>Check <a href="/health">/health</a> — confirms server and database are up</li>
       <li>Check dashboard → Transactions — see every attempt with its status</li>
       <li>Check dashboard → Analytics → Recent API Usage — see which endpoints are being hit</li>
       <li>Look at your server logs — every callback is logged with the raw payload</li>
     </ol>
 
-    <!-- ============ LLM PROMPT ============ -->
     <h2 id="llm-prompt">LLM Prompt</h2>
     <p>
-      Paste this into ChatGPT, Claude, Cursor, or any AI coding assistant to have it integrate the PayHero Central API into your app.
+      Paste this into ChatGPT, Claude, Cursor, or any AI coding assistant to have it integrate the LyCash API into your app.
     </p>
 
     <div class="prompt-box">
@@ -1355,12 +1164,12 @@ async function pay(phone, amount) {
       <span>Copy this into your AI coding assistant</span>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
-    <pre id="llmPromptCode"><code>I need you to integrate M-PESA STK Push payments into my application using a central payment API.
+    <pre id="llmPromptCode"><code>I need you to integrate M-PESA STK Push payments into my application using a central payment API called LyCash.
 
 ## API Details
 
-- Base URL: https://payheroapi.onrender.com
-- API Key: phk_REPLACE_WITH_YOUR_ACTUAL_KEY
+- Base URL: https://lycash.onrender.com
+- API Key: lyc_REPLACE_WITH_YOUR_ACTUAL_KEY
 - Auth: Send the key in the `x-api-key` request header
 - Response format: JSON
 
@@ -1371,7 +1180,7 @@ POST /api/pay/stk-push
 
 Headers:
   Content-Type: application/json
-  x-api-key: phk_...
+  x-api-key: lyc_...
 
 Body:
 {
@@ -1384,7 +1193,7 @@ Success response (200):
 {
   "success": true,
   "external_reference": "order_001",
-  "payhero_response": {
+  "gateway_response": {
     "status": "QUEUED",
     "reference": "459f-4830-826e-468950aa6264260747",
     "CheckoutRequestID": "ws_CO_..."
@@ -1393,7 +1202,7 @@ Success response (200):
 
 Error response:
 {
-  "error": "PayHero API error",
+  "error": "Gateway API error",
   "message": "Human-readable reason"
 }
 
@@ -1401,9 +1210,9 @@ Error response:
 GET /api/pay/status/:reference
 
 Headers:
-  x-api-key: phk_...
+  x-api-key: lyc_...
 
-:reference can be the external_reference, the PayHero reference, the CheckoutRequestID, or the M-PESA receipt.
+:reference can be the external_reference, the gateway reference, the CheckoutRequestID, or the M-PESA receipt.
 
 Response:
 {
@@ -1452,9 +1261,9 @@ Provide complete, working code:
 
 Do not use any library other than what's already in my project. Use native fetch (or axios if already present).</code></pre>
 
-    <!-- ============ FOOTER ============ -->
     <div class="footer">
-      PayHero Central API · Documentation v1.0<br>
+      LyCash · Documentation v1.0<br>
+      LyCash is a payment orchestration API. It uses PayHero as its upstream M-PESA gateway. LyCash is not affiliated with or endorsed by PayHero.<br>
       For support, contact your administrator.
     </div>
 
@@ -1462,9 +1271,6 @@ Do not use any library other than what's already in my project. Use native fetch
 </div>
 
 <script>
-// ============================================================
-// THEME
-// ============================================================
 (function initTheme() {
   const saved = localStorage.getItem('docs_theme') || 'light';
   document.documentElement.setAttribute('data-theme', saved);
@@ -1486,15 +1292,11 @@ function updateThemeIcon(theme) {
     : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
 }
 
-// ============================================================
-// SIDEBAR
-// ============================================================
 function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
   document.getElementById('sidebarOverlay').classList.toggle('active');
 }
 
-// Highlight current section in sidebar
 const sections = document.querySelectorAll('.content h2[id], .content h3[id]');
 const navLinks = document.querySelectorAll('.nav-link');
 
@@ -1513,7 +1315,6 @@ function updateActiveSection() {
 window.addEventListener('scroll', updateActiveSection, { passive: true });
 updateActiveSection();
 
-// Close sidebar on nav click (mobile)
 navLinks.forEach((link) => {
   link.addEventListener('click', () => {
     if (window.innerWidth <= 960) {
@@ -1523,9 +1324,6 @@ navLinks.forEach((link) => {
   });
 });
 
-// ============================================================
-// COPY HELPERS
-// ============================================================
 function copyCode(btn) {
   const pre = btn.closest('.code-header').nextElementSibling;
   if (!pre) return;
