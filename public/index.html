@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PayHero Central</title>
+  <title>LyCash</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='68' font-size='60' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>L</text></svg>" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -33,9 +34,7 @@
       --sidebar-bg: #1e293b;
       --shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
-
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
@@ -45,8 +44,6 @@
       font-size: 14px;
       line-height: 1.5;
     }
-
-    /* ============ AUTH SCREEN ============ */
     .auth-screen {
       min-height: 100vh;
       display: flex;
@@ -87,14 +84,8 @@
       font-size: 13px;
       margin-bottom: 28px;
     }
-
-    /* ============ LAYOUT ============ */
-    .app {
-      display: none;
-      min-height: 100vh;
-    }
+    .app { display: none; min-height: 100vh; }
     .app.active { display: flex; }
-
     .sidebar {
       width: 240px;
       background: var(--sidebar-bg);
@@ -116,11 +107,7 @@
       font-weight: 700;
       font-size: 15px;
     }
-    .sidebar-nav {
-      flex: 1;
-      padding: 16px 12px;
-      overflow-y: auto;
-    }
+    .sidebar-nav { flex: 1; padding: 16px 12px; overflow-y: auto; }
     .nav-item {
       display: flex;
       align-items: center;
@@ -136,17 +123,9 @@
       user-select: none;
     }
     .nav-item:hover { background: var(--bg); color: var(--text); }
-    .nav-item.active {
-      background: var(--primary);
-      color: white;
-    }
+    .nav-item.active { background: var(--primary); color: white; }
     .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
-
-    .sidebar-footer {
-      padding: 16px 20px;
-      border-top: 1px solid var(--border);
-    }
-
+    .sidebar-footer { padding: 16px 20px; border-top: 1px solid var(--border); }
     .main {
       flex: 1;
       margin-left: 240px;
@@ -168,7 +147,6 @@
     .topbar-left { display: flex; align-items: center; gap: 12px; }
     .topbar h1 { font-size: 18px; font-weight: 600; }
     .topbar-right { display: flex; align-items: center; gap: 10px; }
-
     .menu-toggle {
       display: none;
       background: none;
@@ -178,15 +156,7 @@
       cursor: pointer;
       color: var(--text);
     }
-
-    .content {
-      padding: 24px;
-      flex: 1;
-      max-width: 1400px;
-      width: 100%;
-    }
-
-    /* ============ CARDS & UI ============ */
+    .content { padding: 24px; flex: 1; max-width: 1400px; width: 100%; }
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -203,7 +173,6 @@
       align-items: center;
       justify-content: space-between;
     }
-
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -225,18 +194,8 @@
       letter-spacing: 0.5px;
       margin-bottom: 8px;
     }
-    .stat-value {
-      font-size: 26px;
-      font-weight: 700;
-      line-height: 1.2;
-    }
-    .stat-sub {
-      color: var(--text-muted);
-      font-size: 12px;
-      margin-top: 4px;
-    }
-
-    /* ============ FORMS ============ */
+    .stat-value { font-size: 26px; font-weight: 700; line-height: 1.2; }
+    .stat-sub { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
     input, select, textarea {
       width: 100%;
       padding: 10px 14px;
@@ -261,8 +220,6 @@
       margin-bottom: 6px;
     }
     .form-group { margin-bottom: 16px; }
-
-    /* ============ BUTTONS ============ */
     button {
       padding: 10px 16px;
       border-radius: 8px;
@@ -282,11 +239,7 @@
     button:hover { background: var(--primary-hover); }
     button:active { transform: scale(0.98); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    button.ghost {
-      background: transparent;
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
+    button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
     button.ghost:hover { background: var(--bg); }
     button.danger { background: var(--danger); }
     button.danger:hover { background: #dc2626; }
@@ -294,14 +247,8 @@
     button.small { padding: 6px 12px; font-size: 12.5px; }
     .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
     .btn-full { width: 100%; }
-
-    /* ============ TABLES ============ */
     .table-wrap { overflow-x: auto; margin: -4px; }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td {
       text-align: left;
       padding: 11px 14px;
@@ -318,8 +265,6 @@
     }
     tr:last-child td { border-bottom: none; }
     tbody tr:hover { background: var(--bg); }
-
-    /* ============ BADGES ============ */
     .badge {
       display: inline-block;
       padding: 3px 9px;
@@ -337,8 +282,6 @@
     [data-theme="dark"] .badge-pending { background: #78350f; color: #fcd34d; }
     [data-theme="dark"] .badge-failed { background: #7f1d1d; color: #fca5a5; }
     [data-theme="dark"] .badge-inactive { background: #334155; color: #94a3b8; }
-
-    /* ============ CHARTS ============ */
     .chart-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
@@ -352,14 +295,8 @@
       padding: 20px;
       box-shadow: var(--shadow);
     }
-    .chart-card h3 {
-      font-size: 13.5px;
-      font-weight: 600;
-      margin-bottom: 16px;
-    }
+    .chart-card h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 16px; }
     .chart-container { position: relative; height: 260px; }
-
-    /* ============ TERMINAL ============ */
     .terminal {
       background: var(--code-bg);
       border-radius: 10px;
@@ -389,8 +326,6 @@
     .terminal .err { color: #f87171; }
     .terminal .info { color: #60a5fa; }
     .terminal .dim { color: #94a3b8; }
-
-    /* ============ MODAL ============ */
     .modal-backdrop {
       display: none;
       position: fixed;
@@ -414,8 +349,6 @@
       overflow-y: auto;
     }
     .modal h2 { font-size: 16px; margin-bottom: 12px; }
-
-    /* ============ KEY DISPLAY ============ */
     .key-box {
       background: #fef3c7;
       border: 1px solid #f59e0b;
@@ -432,8 +365,6 @@
       border-color: #b45309;
       color: #fde68a;
     }
-
-    /* ============ THEME TOGGLE ============ */
     .theme-toggle {
       width: 36px; height: 36px;
       padding: 0;
@@ -445,8 +376,6 @@
       place-items: center;
     }
     .theme-toggle:hover { background: var(--bg); }
-
-    /* ============ TOAST ============ */
     .toast {
       position: fixed;
       bottom: 24px;
@@ -464,20 +393,13 @@
       max-width: 320px;
     }
     .toast.show { opacity: 1; transform: translateY(0); }
-
     .empty-state {
       text-align: center;
       padding: 40px 20px;
       color: var(--text-muted);
       font-size: 13px;
     }
-
-    .helper {
-      color: var(--text-muted);
-      font-size: 12.5px;
-      margin-top: 4px;
-    }
-
+    .helper { color: var(--text-muted); font-size: 12.5px; margin-top: 4px; }
     pre {
       background: var(--bg);
       border: 1px solid var(--border);
@@ -488,12 +410,8 @@
       font-family: "SF Mono", Monaco, Menlo, Consolas, monospace;
       line-height: 1.6;
     }
-
-    /* ============ RESPONSIVE ============ */
     @media (max-width: 900px) {
-      .sidebar {
-        transform: translateX(-100%);
-      }
+      .sidebar { transform: translateX(-100%); }
       .sidebar.open { transform: translateX(0); }
       .main { margin-left: 0; }
       .menu-toggle { display: grid; place-items: center; }
@@ -506,7 +424,6 @@
       .chart-grid { grid-template-columns: 1fr; }
       th, td { padding: 9px 10px; }
     }
-
     .overlay {
       display: none;
       position: fixed;
@@ -519,12 +436,11 @@
 </head>
 <body>
 
-  <!-- ============ AUTH SCREEN ============ -->
   <div class="auth-screen" id="authScreen">
     <div class="auth-card">
       <div class="auth-logo">
-        <div class="auth-logo-mark">P</div>
-        <span>PayHero Central</span>
+        <div class="auth-logo-mark">L</div>
+        <span>LyCash</span>
       </div>
       <p class="auth-sub">Sign in to manage your payment infrastructure</p>
       <form onsubmit="event.preventDefault(); login();">
@@ -537,15 +453,14 @@
     </div>
   </div>
 
-  <!-- ============ APP ============ -->
   <div class="app" id="app">
 
     <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
 
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <div class="auth-logo-mark" style="width:26px;height:26px;font-size:13px;">P</div>
-        <span>PayHero Central</span>
+        <div class="auth-logo-mark" style="width:26px;height:26px;font-size:13px;">L</div>
+        <span>LyCash</span>
       </div>
       <nav class="sidebar-nav" id="nav">
         <div class="nav-item active" data-page="dashboard">
@@ -597,7 +512,6 @@
     </div>
   </div>
 
-  <!-- ============ MODAL ============ -->
   <div class="modal-backdrop" id="modalBackdrop">
     <div class="modal" id="modalContent"></div>
   </div>
@@ -605,34 +519,22 @@
   <div class="toast" id="toast"></div>
 
 <script>
-// ============================================================
-// STATE
-// ============================================================
-let adminToken = sessionStorage.getItem('ph_admin') || '';
+let adminToken = sessionStorage.getItem('lyc_admin') || '';
 let currentPage = 'dashboard';
 let charts = {};
 
-// ============================================================
-// INIT
-// ============================================================
 (function init() {
-  const savedTheme = localStorage.getItem('ph_theme') || 'light';
+  const savedTheme = localStorage.getItem('lyc_theme') || 'light';
   document.documentElement.setAttribute('data-theme', savedTheme);
   updateThemeIcon(savedTheme);
-
-  if (adminToken) {
-    showApp();
-  }
+  if (adminToken) showApp();
 })();
 
-// ============================================================
-// THEME
-// ============================================================
 function toggleTheme() {
   const cur = document.documentElement.getAttribute('data-theme');
   const next = cur === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('ph_theme', next);
+  localStorage.setItem('lyc_theme', next);
   updateThemeIcon(next);
   if (currentPage === 'analytics') renderAnalytics();
   if (currentPage === 'dashboard') renderDashboard();
@@ -645,17 +547,12 @@ function updateThemeIcon(theme) {
     : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
 }
 
-// ============================================================
-// AUTH
-// ============================================================
 async function login() {
   const password = document.getElementById('adminPassword').value;
   if (!password) return;
-
   const btn = document.getElementById('loginBtn');
   btn.disabled = true;
   btn.textContent = 'Signing in...';
-
   try {
     const res = await fetch('/api/admin/login', {
       method: 'POST',
@@ -664,7 +561,7 @@ async function login() {
     });
     if (res.ok) {
       adminToken = password;
-      sessionStorage.setItem('ph_admin', password);
+      sessionStorage.setItem('lyc_admin', password);
       showApp();
     } else {
       toast('Invalid password');
@@ -679,7 +576,7 @@ async function login() {
 
 function logout() {
   adminToken = '';
-  sessionStorage.removeItem('ph_admin');
+  sessionStorage.removeItem('lyc_admin');
   location.reload();
 }
 
@@ -689,9 +586,6 @@ function showApp() {
   navigate('dashboard');
 }
 
-// ============================================================
-// NAV
-// ============================================================
 function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
   document.getElementById('overlay').classList.toggle('active');
@@ -731,9 +625,6 @@ function navigate(page) {
   renderers[page]();
 }
 
-// ============================================================
-// API HELPER
-// ============================================================
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     ...opts,
@@ -752,9 +643,6 @@ async function api(path, opts = {}) {
   return data;
 }
 
-// ============================================================
-// HELPERS
-// ============================================================
 function toast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -782,20 +670,15 @@ function statusBadge(s) {
   return `<span class="badge ${cls}">${esc(s || 'unknown')}</span>`;
 }
 
-// ============================================================
-// DASHBOARD
-// ============================================================
 async function renderDashboard() {
   const c = document.getElementById('content');
   c.innerHTML = '<div class="empty-state">Loading dashboard…</div>';
-
   try {
     const [stats, txns, chartsData] = await Promise.all([
       api('/api/admin/stats'),
       api('/api/admin/transactions?limit=8'),
       api('/api/admin/charts'),
     ]);
-
     c.innerHTML = `
       <div class="stats-grid">
         <div class="stat-card">
@@ -860,7 +743,6 @@ async function renderDashboard() {
         </div>
       </div>
     `;
-
     drawDailyChart(chartsData.daily);
     drawStatusChart(chartsData.byStatus);
   } catch (e) {
@@ -870,43 +752,20 @@ async function renderDashboard() {
 
 function chartColors() {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-  return {
-    text: dark ? '#94a3b8' : '#6b7280',
-    grid: dark ? '#334155' : '#e5e7eb',
-  };
+  return { text: dark ? '#94a3b8' : '#6b7280', grid: dark ? '#334155' : '#e5e7eb' };
 }
 
 function drawDailyChart(rows) {
   const ctx = document.getElementById('chartDaily');
   if (!ctx) return;
   const { text, grid } = chartColors();
-  const labels = rows.map(r => r.day);
-  const counts = rows.map(r => r.count);
-  const revenue = rows.map(r => r.revenue);
-
   charts.daily = new Chart(ctx, {
     type: 'line',
     data: {
-      labels,
+      labels: rows.map(r => r.day),
       datasets: [
-        {
-          label: 'Transactions',
-          data: counts,
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.1)',
-          fill: true,
-          tension: 0.35,
-          yAxisID: 'y',
-        },
-        {
-          label: 'Revenue (KES)',
-          data: revenue,
-          borderColor: '#10b981',
-          backgroundColor: 'rgba(16,185,129,0.1)',
-          fill: true,
-          tension: 0.35,
-          yAxisID: 'y1',
-        },
+        { label: 'Transactions', data: rows.map(r => r.count), borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)', fill: true, tension: 0.35, yAxisID: 'y' },
+        { label: 'Revenue (KES)', data: rows.map(r => r.revenue), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.35, yAxisID: 'y1' },
       ],
     },
     options: {
@@ -927,38 +786,27 @@ function drawStatusChart(rows) {
   if (!ctx) return;
   const { text } = chartColors();
   const colorMap = { success: '#10b981', pending: '#f59e0b', failed: '#ef4444' };
-  const labels = rows.map(r => r.status);
-  const data = rows.map(r => r.count);
-  const colors = labels.map(l => colorMap[l] || '#94a3b8');
-
   charts.status = new Chart(ctx, {
     type: 'doughnut',
     data: {
-      labels,
-      datasets: [{ data, backgroundColor: colors, borderWidth: 0 }],
+      labels: rows.map(r => r.status),
+      datasets: [{ data: rows.map(r => r.count), backgroundColor: rows.map(r => colorMap[r.status] || '#94a3b8'), borderWidth: 0 }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'bottom', labels: { color: text, font: { size: 11 }, padding: 12 } },
-      },
+      plugins: { legend: { position: 'bottom', labels: { color: text, font: { size: 11 }, padding: 12 } } },
       cutout: '65%',
     },
   });
 }
 
-// ============================================================
-// API KEYS
-// ============================================================
 async function renderKeys() {
   const c = document.getElementById('content');
   c.innerHTML = '<div class="empty-state">Loading keys…</div>';
-
   try {
     const keys = await api('/api/admin/keys');
 
-    // -------- EMPTY STATE --------
     if (keys.length === 0) {
       c.innerHTML = `
         <div class="card" style="text-align:center; padding:48px 24px;">
@@ -970,7 +818,7 @@ async function renderKeys() {
           <h2 style="font-size:18px;margin-bottom:8px;">No API keys yet</h2>
           <p class="helper" style="max-width:420px;margin:0 auto 24px;">
             Create your first API key to start accepting payments from your apps.
-            Each key is bound to a specific PayHero channel.
+            Each key is bound to a specific channel.
           </p>
           <button onclick="openCreateKeyModal()">Create your first API key</button>
         </div>
@@ -978,7 +826,6 @@ async function renderKeys() {
       return;
     }
 
-    // -------- LIST WITH KEYS --------
     c.innerHTML = `
       <div class="card">
         <div class="card-title">
@@ -1020,7 +867,7 @@ async function renderKeys() {
         <div class="card-title">Verify an API Key</div>
         <div class="form-group">
           <label>Paste API Key</label>
-          <input id="verifyKeyInput" placeholder="phk_..." />
+          <input id="verifyKeyInput" placeholder="lyc_..." />
         </div>
         <button class="ghost" onclick="verifyKey()">Verify</button>
         <div id="verifyResult" style="margin-top:12px;"></div>
@@ -1034,13 +881,13 @@ async function renderKeys() {
 function openCreateKeyModal() {
   openModal(`
     <h2>Create New API Key</h2>
-    <p class="helper" style="margin-bottom:16px;">Each key is bound to a PayHero channel and cannot be shown again after creation.</p>
+    <p class="helper" style="margin-bottom:16px;">Each key is bound to a channel and cannot be shown again after creation.</p>
     <div class="form-group">
       <label>Application Name</label>
       <input id="newKeyName" placeholder="e.g. Shop App" />
     </div>
     <div class="form-group">
-      <label>PayHero Channel ID</label>
+      <label>Channel ID</label>
       <input id="newKeyChannel" placeholder="e.g. 1234" />
     </div>
     <div class="form-group">
@@ -1052,9 +899,7 @@ function openCreateKeyModal() {
       <button onclick="createKey()" style="flex:1;">Generate Key</button>
     </div>
   `);
-
   setTimeout(() => document.getElementById('newKeyName')?.focus(), 50);
-
   ['newKeyName','newKeyChannel','newKeyAppId'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('keydown', (e) => {
@@ -1129,9 +974,6 @@ async function verifyKey() {
   }
 }
 
-// ============================================================
-// TRANSACTIONS
-// ============================================================
 async function renderTransactions() {
   const c = document.getElementById('content');
   c.innerHTML = `
@@ -1161,7 +1003,6 @@ async function loadTxns(status, btn) {
   }
   const list = document.getElementById('txnList');
   list.innerHTML = '<div class="empty-state">Loading…</div>';
-
   try {
     const txns = await api(`/api/admin/transactions?status=${status}&limit=100`);
     if (txns.length === 0) {
@@ -1172,7 +1013,7 @@ async function loadTxns(status, btn) {
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>Reference</th><th>PayHero Ref</th><th>App</th>
+            <th>Reference</th><th>Gateway Ref</th><th>App</th>
             <th>Phone</th><th>Amount</th><th>Status</th><th>Created</th>
           </tr></thead>
           <tbody>
@@ -1196,13 +1037,9 @@ async function loadTxns(status, btn) {
   }
 }
 
-// ============================================================
-// ANALYTICS
-// ============================================================
 async function renderAnalytics() {
   const c = document.getElementById('content');
   c.innerHTML = '<div class="empty-state">Loading analytics…</div>';
-
   try {
     const data = await api('/api/admin/charts');
     c.innerHTML = `
@@ -1255,7 +1092,6 @@ async function renderAnalytics() {
         </div>
       </div>
     `;
-
     drawBarChart(data.daily);
     drawAppsChart(data.byApp);
   } catch (e) {
@@ -1297,12 +1133,7 @@ function drawAppsChart(rows) {
     type: 'bar',
     data: {
       labels: rows.map(r => r.app_identifier || 'unknown'),
-      datasets: [{
-        label: 'Transactions',
-        data: rows.map(r => r.count),
-        backgroundColor: '#8b5cf6',
-        borderRadius: 6,
-      }],
+      datasets: [{ label: 'Transactions', data: rows.map(r => r.count), backgroundColor: '#8b5cf6', borderRadius: 6 }],
     },
     options: {
       indexAxis: 'y',
@@ -1317,9 +1148,6 @@ function drawAppsChart(rows) {
   });
 }
 
-// ============================================================
-// DOCS & TERMINAL
-// ============================================================
 function renderDocs() {
   const c = document.getElementById('content');
   c.innerHTML = `
@@ -1329,7 +1157,7 @@ function renderDocs() {
       <h3 style="font-size:13px;margin:16px 0 8px;">Initiate STK Push</h3>
       <pre>POST /api/pay/stk-push
 Headers:
-  x-api-key: phk_xxxxxxxxxxxx
+  x-api-key: lyc_xxxxxxxxxxxx
   Content-Type: application/json
 
 Body:
@@ -1342,14 +1170,14 @@ Body:
       <h3 style="font-size:13px;margin:16px 0 8px;">Query Transaction Status</h3>
       <pre>GET /api/pay/status/order_001
 Headers:
-  x-api-key: phk_xxxxxxxxxxxx</pre>
+  x-api-key: lyc_xxxxxxxxxxxx</pre>
     </div>
 
     <div class="card">
       <div class="card-title">Live API Terminal</div>
       <p class="helper" style="margin-bottom:12px;">
         Try it out. Type <code>help</code> to see commands.
-        Set your key with <code>set-key phk_...</code>, then try <code>stk 254712345678 100 order_1</code>.
+        Set your key with <code>set-key lyc_...</code>, then try <code>stk 254712345678 100 order_1</code>.
       </p>
       <div class="terminal" id="terminal"></div>
     </div>
@@ -1357,15 +1185,12 @@ Headers:
   initTerminal();
 }
 
-// ============================================================
-// TERMINAL
-// ============================================================
 let terminalState = { apiKey: '', history: [], histIndex: -1 };
 
 function initTerminal() {
   const t = document.getElementById('terminal');
   t.innerHTML = '';
-  printLine('<span class="info">PayHero Central API Terminal</span>');
+  printLine('<span class="info">LyCash API Terminal</span>');
   printLine('<span class="dim">Type</span> help <span class="dim">for available commands.</span>');
   printLine('');
   renderInputLine();
@@ -1429,16 +1254,16 @@ async function runCommand(cmd) {
   switch (name) {
     case 'help':
       printLine('<span class="info">Commands:</span>');
-      printLine('  set-key &lt;phk_...&gt;       Set the API key for subsequent requests');
+      printLine('  set-key &lt;lyc_...&gt;       Set the API key for subsequent requests');
       printLine('  key                    Show current key (masked)');
       printLine('  clear-key              Remove stored key');
       printLine('  stk &lt;phone&gt; &lt;amount&gt; &lt;ref&gt;  Initiate STK push');
       printLine('  status &lt;ref&gt;           Query transaction status');
-      printLine('  verify &lt;phk_...&gt;       Verify a key using admin session');
+      printLine('  verify &lt;lyc_...&gt;       Verify a key using admin session');
       printLine('  clear                  Clear terminal');
       break;
     case 'set-key':
-      if (!args[0]) return printLine('<span class="err">Usage: set-key phk_...</span>');
+      if (!args[0]) return printLine('<span class="err">Usage: set-key lyc_...</span>');
       terminalState.apiKey = args[0];
       printLine('<span class="ok">✓ Key set.</span>');
       break;
@@ -1500,7 +1325,7 @@ async function runCommand(cmd) {
     }
     case 'verify': {
       const [key] = args;
-      if (!key) return printLine('<span class="err">Usage: verify &lt;phk_...&gt;</span>');
+      if (!key) return printLine('<span class="err">Usage: verify &lt;lyc_...&gt;</span>');
       try {
         const r = await api('/api/admin/keys/verify', {
           method: 'POST',
@@ -1519,9 +1344,6 @@ async function runCommand(cmd) {
   }
 }
 
-// ============================================================
-// SETTINGS
-// ============================================================
 async function renderSettings() {
   const c = document.getElementById('content');
   c.innerHTML = `
@@ -1545,7 +1367,7 @@ async function renderSettings() {
         <table>
           <tbody>
             <tr><td>API Base URL</td><td><code>${esc(location.origin)}</code></td></tr>
-            <tr><td>Callback URL</td><td><code>${esc(location.origin)}/api/payhero/callback</code></td></tr>
+            <tr><td>Callback URL</td><td><code>${esc(location.origin)}/api/lycash/callback</code></td></tr>
             <tr><td>STK Push Endpoint</td><td><code>POST /api/pay/stk-push</code></td></tr>
             <tr><td>Status Endpoint</td><td><code>GET /api/pay/status/:reference</code></td></tr>
           </tbody>
@@ -1557,15 +1379,12 @@ async function renderSettings() {
 
 function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('ph_theme', theme);
+  localStorage.setItem('lyc_theme', theme);
   updateThemeIcon(theme);
   if (currentPage === 'dashboard') renderDashboard();
   if (currentPage === 'analytics') renderAnalytics();
 }
 
-// ============================================================
-// MODAL
-// ============================================================
 function openModal(html) {
   document.getElementById('modalContent').innerHTML = html;
   document.getElementById('modalBackdrop').classList.add('active');
