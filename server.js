@@ -10,6 +10,9 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const BRAND = 'LyCash';
+const KEY_PREFIX = 'lyc_';
+
 // ============================================================
 // BASIC SECURITY
 // ============================================================
@@ -41,7 +44,7 @@ app.use(helmet({
 // ============================================================
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
-  : ['https://payheroapi.onrender.com'];
+  : ['https://lycash.onrender.com'];
 
 const allowAll = allowedOrigins.includes('*');
 
@@ -196,7 +199,7 @@ function hashKey(key) {
   return crypto.createHash('sha256').update(key).digest('hex');
 }
 function generateApiKey() {
-  return 'phk_' + crypto.randomBytes(32).toString('hex');
+  return KEY_PREFIX + crypto.randomBytes(32).toString('hex');
 }
 function generateWebhookSecret() {
   return 'whsec_' + crypto.randomBytes(32).toString('hex');
@@ -204,7 +207,7 @@ function generateWebhookSecret() {
 function getPayHeroAuthHeader() {
   const u = process.env.PAYHERO_API_USERNAME;
   const p = process.env.PAYHERO_API_PASSWORD;
-  if (!u || !p) throw new Error('PayHero credentials not configured');
+  if (!u || !p) throw new Error('Upstream credentials not configured');
   return `Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`;
 }
 function signWebhookPayload(secret, payload) {
@@ -231,8 +234,8 @@ async function logRequest(req, keyRecord, statusCode) {
   }
 }
 
-// Extract the best identifier from PayHero's response for storage
-function extractPayheroRef(data) {
+// Extract the best reference from the upstream gateway response
+function extractGatewayRef(data) {
   return (
     data.reference ||
     data.response?.reference ||
@@ -290,13 +293,14 @@ app.get('/health', async (req, res) => {
   try {
     await db('SELECT 1');
     res.json({
+      service: BRAND,
       status: 'ok',
       turso: 'connected',
       cached_keys: keyCache.size,
       timestamp: new Date().toISOString(),
     });
   } catch (e) {
-    res.status(500).json({ status: 'error', message: e.message });
+    res.status(500).json({ service: BRAND, status: 'error', message: e.message });
   }
 });
 
@@ -525,7 +529,7 @@ app.get('/api/admin/charts', adminAuth, async (req, res) => {
 });
 
 // ============================================================
-// PAYHERO: STK PUSH
+// STK PUSH
 // ============================================================
 app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
   try {
@@ -560,7 +564,6 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       return res.status(400).json({ error: 'Amount must be between 1 and 500,000 KES' });
     }
 
-    // Idempotency check
     const existing = await db(
       'SELECT * FROM transactions WHERE external_reference = ?',
       [external_reference]
@@ -575,21 +578,19 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       });
     }
 
-    // Insert pending
     await db(
       `INSERT INTO transactions (external_reference, app_identifier, channel_id, phone_number, amount, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`,
       [external_reference, req.apiKeyRecord.app_identifier, channelId, phone, numericAmount]
     );
 
-    // Call PayHero — official endpoint POST /api/v2/payments
     const payload = {
       amount: numericAmount,
       phone_number: phone,
       channel_id: channelId,
       provider: 'm-pesa',
       external_reference,
-      callback_url: callback_url || `${req.protocol}://${req.get('host')}/api/payhero/callback`,
+      callback_url: callback_url || `${req.protocol}://${req.get('host')}/api/lycash/callback`,
     };
 
     let response, data;
@@ -608,14 +609,14 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       clearTimeout(timer);
       data = await response.json().catch(() => ({}));
     } catch (e) {
-      console.error('PayHero fetch error:', e.message);
+      console.error('Gateway fetch error:', e.message);
       await db(
         `UPDATE transactions SET status = 'failed', callback_payload = ?, updated_at = CURRENT_TIMESTAMP
          WHERE external_reference = ?`,
         [JSON.stringify({ error: e.message }), external_reference]
       );
       await logRequest(req, req.apiKeyRecord, 502);
-      return res.status(502).json({ error: 'PayHero unreachable', message: e.message });
+      return res.status(502).json({ error: 'Gateway unreachable', message: e.message });
     }
 
     if (!response.ok) {
@@ -626,24 +627,23 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
       );
       await logRequest(req, req.apiKeyRecord, response.status);
       return res.status(response.status).json({
-        error: 'PayHero API error',
+        error: 'Gateway API error',
         message: data.error_message || data.message || 'STK Push failed',
         details: data,
       });
     }
 
-    // Store PayHero's reference so we can look up the transaction by any identifier
-    const payheroRef = extractPayheroRef(data);
-    if (payheroRef) {
+    const gatewayRef = extractGatewayRef(data);
+    if (gatewayRef) {
       await db(
         `UPDATE transactions SET payhero_reference = ?, updated_at = CURRENT_TIMESTAMP
          WHERE external_reference = ?`,
-        [payheroRef, external_reference]
+        [gatewayRef, external_reference]
       );
     }
 
     await logRequest(req, req.apiKeyRecord, 200);
-    res.json({ success: true, external_reference, payhero_response: data });
+    res.json({ success: true, external_reference, gateway_response: data });
   } catch (e) {
     console.error('STK push error:', e);
     if (req.apiKeyRecord) await logRequest(req, req.apiKeyRecord, 500);
@@ -652,20 +652,13 @@ app.post('/api/pay/stk-push', authenticateApiKey, async (req, res) => {
 });
 
 // ============================================================
-// PAYHERO: STATUS QUERY (FIXED)
+// STATUS QUERY
 // ============================================================
-// Flow:
-//   1. Client polls with ANY identifier (external_reference, payhero_reference,
-//      mpesa_receipt, or CheckoutRequestID).
-//   2. We look it up in our DB to find the canonical external_reference.
-//   3. We query PayHero using that external_reference.
-//   4. We return the result and update our DB.
 app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
   try {
     const { reference } = req.params;
     const channelId = req.apiKeyRecord.channel_id;
 
-    // Match against EVERY known identifier column
     const t = await db(
       `SELECT * FROM transactions
        WHERE external_reference = ?
@@ -674,89 +667,91 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
       [reference, reference, reference]
     );
 
-    if (t.rows.length > 0) {
-      const txn = t.rows[0];
-      if (txn.status !== 'pending' && txn.verified_with_payhero) {
-        await logRequest(req, req.apiKeyRecord, 200);
-        return res.json({ source: 'local', transaction: txn });
-      }
-      // Otherwise query PayHero
-      const lookupRef = txn.external_reference;
-      let response, data;
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 20000);
-        response = await fetch(
-          `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(lookupRef)}&channel_id=${encodeURIComponent(channelId)}`,
-          { headers: { Authorization: getPayHeroAuthHeader() }, signal: controller.signal }
-        );
-        clearTimeout(timer);
-        data = await response.json().catch(() => ({}));
-      } catch (e) {
-        return res.json({ source: 'local', transaction: txn, note: 'PayHero unreachable' });
-      }
+    let txn = t.rows.length > 0 ? t.rows[0] : null;
 
-      if (response.ok) {
-        const normalized = normalizeStatus(data.status || data.Status || data.response?.Status);
-        if (normalized !== 'unknown') {
-          await db(
-            `UPDATE transactions SET status = ?, verified_with_payhero = 1, updated_at = CURRENT_TIMESTAMP
-             WHERE external_reference = ?`,
-            [normalized, txn.external_reference]
-          );
-        }
-        await logRequest(req, req.apiKeyRecord, 200);
-        return res.json({ source: 'payhero', transaction: data });
-      }
-      // If PayHero 404s but we have a local record, return the local one
+    if (txn && txn.status !== 'pending' && txn.verified_with_payhero) {
       await logRequest(req, req.apiKeyRecord, 200);
       return res.json({ source: 'local', transaction: txn });
     }
 
-    // No local match — try PayHero directly with whatever reference was given
+    const lookupRef = txn ? txn.external_reference : reference;
+
     let response, data;
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20000);
       response = await fetch(
-        `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(reference)}&channel_id=${encodeURIComponent(channelId)}`,
-        { headers: { Authorization: getPayHeroAuthHeader() }, signal: controller.signal }
+        `https://backend.payhero.co.ke/api/v2/transaction-status?reference=${encodeURIComponent(lookupRef)}&channel_id=${encodeURIComponent(channelId)}`,
+        {
+          headers: { Authorization: getPayHeroAuthHeader() },
+          signal: controller.signal,
+        }
       );
       clearTimeout(timer);
       data = await response.json().catch(() => ({}));
     } catch (e) {
+      console.error('Gateway status fetch error:', e.message);
+      if (txn) {
+        await logRequest(req, req.apiKeyRecord, 200);
+        return res.json({ source: 'local', transaction: txn, note: 'Gateway unreachable' });
+      }
       await logRequest(req, req.apiKeyRecord, 502);
-      return res.status(502).json({ error: 'PayHero unreachable', message: e.message });
+      return res.status(502).json({ error: 'Gateway unreachable', message: e.message });
     }
 
     if (!response.ok) {
-      await logRequest(req, req.apiKeyRecord, response.status);
-      return res.status(response.status).json({ error: 'PayHero API error', details: data });
+      if (txn) {
+        await logRequest(req, req.apiKeyRecord, 200);
+        return res.json({ source: 'local', transaction: txn });
+      }
+      await logRequest(req, req.apiKeyRecord, 404);
+      return res.status(404).json({
+        error: 'Transaction not found',
+        reference,
+        message: 'No transaction with this reference exists in LyCash records.',
+      });
     }
 
-    // Insert a synthetic row so future polls match
-    const normalized = normalizeStatus(data.status || data.Status || data.response?.Status);
-    const merchantRef = data.MerchantRequestID || '';
-    const checkoutId = data.CheckoutRequestID || '';
-    const mpesaReceipt = data.MpesaReceiptNumber || data.response?.MPESA_Reference || '';
+    const normalized = normalizeStatus(
+      data.status || data.Status || data.response?.Status
+    );
+
+    const gatewayRef = extractGatewayRef(data) || (txn ? txn.payhero_reference : null);
+    const mpesaReceipt =
+      data.mpesa_receipt ||
+      data.response?.MPESA_Reference ||
+      (txn ? txn.mpesa_receipt : null);
 
     if (normalized !== 'unknown') {
-      try {
+      if (txn) {
         await db(
-          `INSERT OR IGNORE INTO transactions
-           (external_reference, app_identifier, channel_id, payhero_reference,
-            mpesa_receipt, status, verified_with_payhero, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
-          [reference, req.apiKeyRecord.app_identifier, channelId,
-           merchantRef || checkoutId || null, mpesaReceipt || null, normalized]
+          `UPDATE transactions
+           SET status = ?,
+               verified_with_payhero = 1,
+               payhero_reference = COALESCE(?, payhero_reference),
+               mpesa_receipt = COALESCE(?, mpesa_receipt),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE external_reference = ?`,
+          [normalized, gatewayRef || null, mpesaReceipt || null, txn.external_reference]
         );
-      } catch (e) {
-        console.error('Synthetic insert failed:', e.message);
+      } else {
+        try {
+          await db(
+            `INSERT OR IGNORE INTO transactions
+             (external_reference, app_identifier, channel_id, payhero_reference,
+              mpesa_receipt, status, verified_with_payhero, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+            [reference, req.apiKeyRecord.app_identifier, channelId,
+             gatewayRef || null, mpesaReceipt || null, normalized]
+          );
+        } catch (e) {
+          console.error('Synthetic insert failed:', e.message);
+        }
       }
     }
 
     await logRequest(req, req.apiKeyRecord, 200);
-    res.json({ source: 'payhero', transaction: data });
+    res.json({ source: 'gateway', transaction: data });
   } catch (e) {
     console.error('Status query error:', e);
     if (req.apiKeyRecord) await logRequest(req, req.apiKeyRecord, 500);
@@ -765,19 +760,18 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
 });
 
 // ============================================================
-// PAYHERO: CALLBACK
+// CALLBACK — primary handler
 // ============================================================
-app.post('/api/payhero/callback', async (req, res) => {
+async function handleGatewayCallback(req, res) {
   const payload = req.body || {};
   try {
     console.log('Callback:', JSON.stringify(payload));
-    
-    // Extract ALL possible identifiers from both callback shapes
+
     const response = payload.response || payload;
-    const externalRef = 
-      response.ExternalReference || 
-      response.User_Reference || 
-      payload.external_reference || 
+    const externalRef =
+      response.ExternalReference ||
+      response.User_Reference ||
+      payload.external_reference ||
       payload.reference;
     const merchantRef = response.MerchantRequestID || '';
     const checkoutId = response.CheckoutRequestID || '';
@@ -786,7 +780,6 @@ app.post('/api/payhero/callback', async (req, res) => {
 
     console.log('Extracted IDs:', { externalRef, merchantRef, checkoutId, mpesaRef, channelId });
 
-    // Log the callback
     try {
       await db(
         `INSERT INTO callback_log (external_reference, raw_payload, source_ip)
@@ -801,7 +794,6 @@ app.post('/api/payhero/callback', async (req, res) => {
       return res.status(200).json({ status: 'received_no_reference' });
     }
 
-    // Find transaction by ANY identifier
     let txn = null;
     const lookups = [
       ['external_reference', externalRef],
@@ -825,7 +817,6 @@ app.post('/api/payhero/callback', async (req, res) => {
       return res.status(200).json({ status: 'received_unknown_transaction' });
     }
 
-    // Verify with PayHero using our canonical external_reference
     let verified = false;
     let verifiedStatus = 'unknown';
     try {
@@ -845,7 +836,6 @@ app.post('/api/payhero/callback', async (req, res) => {
       console.error('Verify failed:', e.message);
     }
 
-    // Fallback: trust the callback if it says success and we got a receipt
     if (!verified && mpesaRef && (response.Status || '').toLowerCase().includes('success')) {
       verifiedStatus = 'success';
       verified = true;
@@ -858,7 +848,6 @@ app.post('/api/payhero/callback', async (req, res) => {
       return res.status(200).json({ status: 'ignored_downgrade' });
     }
 
-    // Update with ALL identifiers so future polls match
     await db(
       `UPDATE transactions
        SET status = ?,
@@ -878,7 +867,6 @@ app.post('/api/payhero/callback', async (req, res) => {
       ]
     );
 
-    // Forward to app webhook (unchanged)
     if (txn.app_identifier) {
       const kr = await db('SELECT * FROM api_keys WHERE app_identifier = ?', [txn.app_identifier]);
       const apiKey = kr.rows[0];
@@ -886,7 +874,7 @@ app.post('/api/payhero/callback', async (req, res) => {
         const forwardPayload = {
           event: 'payment.' + finalStatus,
           external_reference: txn.external_reference,
-          payhero_reference: merchantRef || txn.payhero_reference,
+          gateway_reference: merchantRef || txn.payhero_reference,
           mpesa_receipt: mpesaRef,
           amount: txn.amount,
           phone_number: txn.phone_number,
@@ -896,10 +884,10 @@ app.post('/api/payhero/callback', async (req, res) => {
         };
         const headers = {
           'Content-Type': 'application/json',
-          'X-PayHero-Event': 'payment.' + finalStatus,
+          'X-LyCash-Event': 'payment.' + finalStatus,
         };
         const sig = signWebhookPayload(apiKey.webhook_secret, forwardPayload);
-        if (sig) headers['X-PayHero-Signature'] = sig;
+        if (sig) headers['X-LyCash-Signature'] = sig;
 
         fetch(apiKey.webhook_url, {
           method: 'POST',
@@ -914,11 +902,10 @@ app.post('/api/payhero/callback', async (req, res) => {
     console.error('Callback error:', e);
     res.status(200).json({ status: 'received_with_error' });
   }
-});
+}
 
-app.get('/docs', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'docs.html'));
-});
+app.post('/api/lycash/callback', handleGatewayCallback);
+app.post('/api/payhero/callback', handleGatewayCallback); // legacy alias
 
 // ============================================================
 // SPA FALLBACK
@@ -949,7 +936,7 @@ app.use((err, req, res, next) => {
     await refreshKeyCache();
 
     app.listen(PORT, () => {
-      console.log(`Server listening on port ${PORT}`);
+      console.log(`${BRAND} listening on port ${PORT}`);
     });
 
     setInterval(refreshKeyCache, 60_000);
