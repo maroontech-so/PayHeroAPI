@@ -234,7 +234,6 @@ async function logRequest(req, keyRecord, statusCode) {
   }
 }
 
-// Extract the best reference from the upstream gateway response
 function extractGatewayRef(data) {
   return (
     data.reference ||
@@ -760,7 +759,7 @@ app.get('/api/pay/status/:reference', authenticateApiKey, async (req, res) => {
 });
 
 // ============================================================
-// CALLBACK — primary handler
+// CALLBACK
 // ============================================================
 async function handleGatewayCallback(req, res) {
   const payload = req.body || {};
@@ -906,6 +905,13 @@ async function handleGatewayCallback(req, res) {
 
 app.post('/api/lycash/callback', handleGatewayCallback);
 app.post('/api/payhero/callback', handleGatewayCallback); // legacy alias
+
+// ============================================================
+// DOCS PAGE
+// ============================================================
+app.get('/docs', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'docs.html'));
+});
 
 // ============================================================
 // SPA FALLBACK
