@@ -44,7 +44,7 @@ app.use(helmet({
 // ============================================================
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
-  : ['https://lycash.onrender.com'];
+  : ['https://payheroapi.onrender.com'];
 
 const allowAll = allowedOrigins.includes('*');
 
