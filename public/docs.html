@@ -522,7 +522,7 @@
       <span>cURL</span>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
-    <pre><code>curl -X POST https://lycash.onrender.com/api/pay/stk-push \
+    <pre><code>curl -X POST https://payheroapi.onrender.com/api/pay/stk-push \
   -H "Content-Type: application/json" \
   -H "x-api-key: lyc_YOUR_KEY_HERE" \
   -d '{
@@ -559,7 +559,7 @@
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
     <pre><code>curl -H "x-api-key: lyc_YOUR_KEY_HERE" \
-  https://lycash.onrender.com/api/pay/status/order_001</code></pre>
+  https://payheroapi.onrender.com/api/pay/status/order_001</code></pre>
 
     <p>When the customer completes payment, you'll see:</p>
 
@@ -722,7 +722,7 @@
     </div>
 
     <h2 id="endpoints">API Reference</h2>
-    <p>All endpoints return JSON. The base URL is <code>https://lycash.onrender.com</code>.</p>
+    <p>All endpoints return JSON. The base URL is <code>https://payheroapi.onrender.com</code>.</p>
 
     <h3 id="ep-stk">Initiate STK Push</h3>
     <div class="endpoint">
@@ -766,7 +766,7 @@
       <span>JavaScript (fetch)</span>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
-    <pre><code>const res = await fetch('https://lycash.onrender.com/api/pay/stk-push', {
+    <pre><code>const res = await fetch('https://payheroapi.onrender.com/api/pay/stk-push', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -823,7 +823,7 @@ console.log(data);</code></pre>
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
     <pre><code>const res = await fetch(
-  'https://lycash.onrender.com/api/pay/status/order_1792148000',
+  'https://payheroapi.onrender.com/api/pay/status/order_1792148000',
   { headers: { 'x-api-key': 'lyc_YOUR_KEY_HERE' } }
 );
 const data = await res.json();
@@ -934,7 +934,7 @@ app.post('/your-webhook', (req, res) => {
       <button class="copy-btn" onclick="copyCode(this)">Copy</button>
     </div>
     <pre><code>const API_KEY = process.env.LYCASH_API_KEY;
-const API_BASE = 'https://lycash.onrender.com';
+const API_BASE = 'https://payheroapi.onrender.com';
 
 async function initiatePayment(phone, amount, reference) {
   const res = await fetch(`${API_BASE}/api/pay/stk-push`, {
@@ -975,7 +975,7 @@ async function checkStatus(reference) {
 import requests
 
 API_KEY = os.environ['LYCASH_API_KEY']
-API_BASE = 'https://lycash.onrender.com'
+API_BASE = 'https://payheroapi.onrender.com'
 
 def initiate_payment(phone, amount, reference):
     res = requests.post(
@@ -1008,7 +1008,7 @@ def check_status(reference):
     </div>
     <pre><code>&lt;?php
 $API_KEY = getenv('LYCASH_API_KEY');
-$API_BASE = 'https://lycash.onrender.com';
+$API_BASE = 'https://payheroapi.onrender.com';
 
 function initiatePayment($phone, $amount, $reference) {
     global $API_KEY, $API_BASE;
@@ -1041,7 +1041,7 @@ function initiatePayment($phone, $amount, $reference) {
 async function pay(phone, amount) {
   const reference = 'web_' + Date.now();
 
-  const res = await fetch('https://lycash.onrender.com/api/pay/stk-push', {
+  const res = await fetch('https://payheroapi.onrender.com/api/pay/stk-push', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1062,7 +1062,7 @@ async function pay(phone, amount) {
 
   const interval = setInterval(async () =&gt; {
     const s = await fetch(
-      'https://lycash.onrender.com/api/pay/status/' + reference,
+      'https://payheroapi.onrender.com/api/pay/status/' + reference,
       { headers: { 'x-api-key': 'lyc_YOUR_KEY_HERE' } }
     ).then(r =&gt; r.json());
 
@@ -1168,7 +1168,7 @@ async function pay(phone, amount) {
 
 ## API Details
 
-- Base URL: https://lycash.onrender.com
+- Base URL: https://payheroapi.onrender.com
 - API Key: lyc_REPLACE_WITH_YOUR_ACTUAL_KEY
 - Auth: Send the key in the `x-api-key` request header
 - Response format: JSON
